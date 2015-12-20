@@ -1,0 +1,3 @@
+#do not want to send up ipython notebook 
+.ipynb_checkpoints
+*.ipynb
