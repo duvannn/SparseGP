@@ -26,10 +26,10 @@ def get_all_data(data_class):
 		trainX = read_dataset("data/kin40k/kin40k_train_data.asc")
 		trainY = read_dataset("data/kin40k/kin40k_train_labels.asc")
 	elif data_class == "pumadyn32nm":
-		trainData = read_dataset("data/pumadyn-32nm/accel/Prototask.data")
-		trainX, trainY = trainData[0:32,:],  trainData[32:,:];
-		testData =  read_dataset("data/pumadyn-32nm/Dataset.data")
-		testX, testY = testData[0:32,:],  testData[32:,:];
+		testX = read_dataset("data/pumadyn-32nm/pumadyn32nm_test_data.asc")
+		testY = read_dataset("data/pumadyn-32nm/pumadyn32nm_test_labels.asc")
+		trainX = read_dataset("data/pumadyn-32nm/pumadyn32nm_train_data.asc")
+		trainY = read_dataset("data/pumadyn-32nm/pumadyn32nm_train_labels.asc")
 	else:
 		raise Exception("Dataset not found");
 	return trainX, trainY, testX, testY;
