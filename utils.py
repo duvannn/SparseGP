@@ -1,7 +1,7 @@
 import numpy as np
 
 
-#Returns the input X and corresponding output Y as a tuple X,Y 
+#Returns the data as a numpy matrix
 def read_dataset(path):
 	with open(path, "r") as raw_data:
 		data = []
