@@ -14,7 +14,7 @@ def read_dataset(path):
 					except ValueError:
 						print value
 			data.append(nrow)
-	data = np.asmatrix(data)
+	data = np.asmatrix(data,dtype=np.float32)
 	return data
 
 # Returns the training and test set of the desired data set: kin40 or pumadyn32nm.
