@@ -16,10 +16,10 @@ class GaussianProcess(object):
         self.ytrain = ytrain
         self.N = self.xtrain.shape[0]
         self.D = self.xtrain.shape[1]
+        self.b = shared(np.ones(self.D),"b")
+        self.c = shared(1.0,"c")
         self.sigma = shared(np.float64(1.),"sigma")
-        self.kernel = ARDKernel(self.D)
-        self.b = self.kernel.b
-        self.c = self.kernel.c
+        self.kernel = ARDKernel(self.D,b = self.b,c=self.c)
         self.det = T.nlinalg.Det()
         self.inverter = T.nlinalg.MatrixInverse()
         self.params = [self.b,self.c,self.sigma]
@@ -130,9 +130,9 @@ class SparseGaussianProcess(GaussianProcess):
 		GaussianProcess.__init__(self,xtrain,ytrain)
 		self.M = M
 		self.pseudo_points = shared(self.xtrain[:self.M,:],"pseudo_inputs")
-		self.Kmm = ARDKernel(self.D)
-		self.Kmn = ARDKernel(self.D)
-		self.Knm = ARDKernel(self.D)
+		self.Kmm = ARDKernel(self.D,b=self.b,c=self.c)
+		self.Kmn = ARDKernel(self.D,b = self.b,c = self.c)
+		self.Knm = ARDKernel(self.D,b = self.b,c=self.c)
 		self.params = [self.b,self.c,self.sigma, self.pseudo_points]
 
 	def log_likelihood(self):
@@ -145,7 +145,7 @@ class SparseGaussianProcess(GaussianProcess):
 	 	Ainv = self.inverter(A)
 	 	psi1 = T.log(self.det(A)) + T.log(self.det(gamma))-T.log(self.det(Kmm))+(self.N-self.M)*T.log(T.power(self.sigma,2))
 	 	psi2 = T.dot(T.dot(T.power(1./self.sigma,2)*self.ytrain.T,gammainv-T.dot(T.dot(T.dot(T.dot(gammainv,Knm),Ainv),Kmn),gammainv)),self.ytrain)
-	 	return psi1+psi2
+	 	return (psi1+psi2).flatten()[0]
 
 	def getL(self):
 		return function(inputs=[self.kernel.X, self.kernel.Xp,self.Kmm.X,self.Kmm.Xp,self.Kmn.X,self.Kmn.Xp,self.Knm.X,self.Knm.Xp],outputs=[self.log_likelihood()])

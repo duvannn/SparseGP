@@ -16,7 +16,7 @@ class ARDKernel(object):
     	if(c==None):
         	self.c = shared(np.float64(1.),"c")
         else:
-        	c = c
+        	self.c = c
         self.X = T.dmatrix('X')
         self.Xp = T.dmatrix('Xp')
         scaledX = self.b*self.X
