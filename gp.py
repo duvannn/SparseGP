@@ -7,6 +7,8 @@ import numpy as np
 from scipy.optimize import minimize
 from kernels import *
 from theano import shared
+from keras import constraints
+from keras import optimizers
 """
 Standard gaussian process implementation with ARD kernel. Hyperparams: sigma, c, b_1...,b_D.
 """
@@ -87,39 +89,53 @@ class GaussianProcess(object):
             prevcost = costs[iters-1]
             currcost = costs[iters]
         return costs
-	"""	
-	Wrapper around scipy.minimize, vectorizes all hyperparams for compatibility.
-	"""
-	def train_numpy_cost_grads(self, method = " L-BFGS-B"):
-		cost = self.getL()
+
+    def train_numpy_cost_grads(self, method = "L-BFGS-B"):
+        cost = self.getL()
         g = self.grad()
         def train_fn(x):
-        	b = x[:self.D]
-        	c = x[self.D]
-        	sigma = x[self.D+1]
-        	self.b.set_value(np.float64(b),borrow=True)
-        	self.c.set_value(np.float64(c),borrow=True)
-        	self.sigma.set_value(np.float64(sigma),borrow=True)
-        	c = cost(self.xtrain,self.xtrain)
-        	grads = g(self.xtrain,self.xtrain)
-        	gr = list(grads[0])
-        	gr.append(np.array(grads[1]))
-        	gr.append(np.array(grads[2]))
-        	c = np.float64(c)
-        	gr = np.float64(gr)
-        	return c,gr
+            b = x[:self.D]
+            c = x[self.D]
+            sigma = x[self.D+1]
+            self.b.set_value(np.float64(b),borrow=True)
+            self.c.set_value(np.float64(c),borrow=True)
+            self.sigma.set_value(np.float64(sigma),borrow=True)
+            c = cost(self.xtrain,self.xtrain)
+            grads = g(self.xtrain,self.xtrain)
+            gr = list(grads[0])
+            gr.append(np.array(grads[1]))
+            gr.append(np.array(grads[2]))
+            c = np.float64(c)
+            gr = np.float64(gr)
+            return c,gr
         x = np.random.random(self.D+2)
         weights = minimize(train_fn,x,
-                    method=method, jac=True,bounds=tuple((0.,None) for x in range(self.D+2)),
+                    method=method, jac=True,bounds=tuple((0.0001,None) for x in range(self.D+2)),
                     options={'maxiter': 200, 'disp': True})
         x = weights.x
-    	b = x[:self.D]
-    	c = x[self.D]
-    	sigma = x[self.D+1]
-    	self.b.set_value(np.float64(b),borrow=True)
-    	self.c.set_value(np.float64(c),borrow=True)
-    	self.sigma.set_value(np.float64(sigma),borrow=True)
-       	return weights
+        b = x[:self.D]
+        c = x[self.D]
+        sigma = x[self.D+1]
+        self.b.set_value(np.float64(b),borrow=True)
+        self.c.set_value(np.float64(c),borrow=True)
+        self.sigma.set_value(np.float64(sigma),borrow=True)
+        return weights
+
+    def Adam(self,lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08):
+        constraint = [constraints.NonNeg() for i in self.params]
+        rmsprop = optimizers.Adam(lr=lr,beta_1=beta_1,beta_2=beta_2,epsilon=epsilon)
+        train_loss = self.log_likelihood()
+        updates = rmsprop.get_updates(self.params,constraint,train_loss)
+        trainf = function([self.kernel.X,self.kernel.Xp],[train_loss], updates=updates)
+        return trainf
+
+    def RMSprop(self,lr=0.001, rho=0.9, epsilon=1e-6):
+        constraint = [constraints.NonNeg() for i in self.params]
+        rmsprop = optimizers.RMSprop(lr=lr,tho=rho,epsilon=epsilon)
+        train_loss = self.log_likelihood()
+        updates = rmsprop.get_updates(self.params,constraint,train_loss)
+        trainf = function([self.kernel.X,self.kernel.Xp],[train_loss], updates=updates)
+        return trainf
 
 """
 Sparse Gaussian Processes using Pseudo-inputs, Snelson et al. 2006
@@ -154,6 +170,7 @@ class SparseGaussianProcess(GaussianProcess):
 		grad = T.grad(self.log_likelihood(),self.params)
 		fn = function(inputs=[self.kernel.X, self.kernel.Xp,self.Kmm.X,self.Kmm.Xp,self.Kmn.X,self.Kmn.Xp,self.Knm.X,self.Knm.Xp], outputs=grad)
 		return fn
+
 
 	def plain_gradient_descent(self,maxiters =1000, step=0.01):
 		gf = self.grad()
