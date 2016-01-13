@@ -19,11 +19,18 @@ class ARDKernel(object):
         	self.c = c
         self.X = T.dmatrix('X')
         self.Xp = T.dmatrix('Xp')
-        scaledX = self.b*self.X
-        scaledXp = self.b*self.Xp
+        scaledX = T.sqrt(self.b)*self.X
+        scaledXp = T.sqrt(self.b)*self.Xp
         squared_euclidean_distances = (scaledX ** 2).sum(1).reshape((scaledX.shape[0], 1)) + (scaledXp ** 2).sum(1).reshape((1, scaledXp.shape[0])) - 2 * scaledX.dot(scaledXp.T)
         xp = 0.5*squared_euclidean_distances
         self.exp = self.c*T.exp(-xp)
         self.C = function(inputs=[self.X, self.Xp], outputs=[self.exp])
     def evaluate(self,X,Y):
         return self.C(X,Y)[0]
+
+def get_exp(X,Xp,D,b,c):
+    scaledX = T.sqrt(b)*X
+    scaledXp = T.sqrt(b)*Xp
+    squared_euclidean_distances = (scaledX ** 2).sum(1).reshape((scaledX.shape[0], 1)) + (scaledXp ** 2).sum(1).reshape((1, scaledXp.shape[0])) - 2 * scaledX.dot(scaledXp.T)
+    xp = 0.5*squared_euclidean_distances
+    return  c*T.exp(-xp)

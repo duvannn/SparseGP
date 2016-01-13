@@ -11,9 +11,13 @@ def read_dataset(path):
 			for value in row.split(" "):
 				if len(value)>0:
 					try:
-						nrow.append(np.float(value))
+						val = np.float(value)
+						if np.isfinite(val) and not np.isnan(val):
+							nrow.append(np.float(value))
+						else:
+							raise ValueError("bad value")
 					except ValueError:
-						print value
+						print("someting bad happend")
 			data.append(nrow)
 	data = np.asmatrix(data,dtype=np.float32)
 	return data
