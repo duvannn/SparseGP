@@ -1,7 +1,13 @@
 import numpy as np
-import math
 from utils import *
 from sys import argv
+# from <some kernel> import *
+
+#########
+
+# This is an implementation of the full Gaussian process 
+
+#########
 
 trainX, trainY, testX, testY = get_all_data("kin40k")
 
@@ -12,29 +18,25 @@ print trainY.shape
 print testX.shape
 print testY.shape
 
-# define the number of pseudo-input
-M = 10
+Y = trainY
+
 # define D
 D = trainX.shape[1]
 # define N
 N = trainX.shape[0]
 
-def kernel():
-	return 0
 
+#Log likelihood takes a 1D-array with the parameters
+def loglikelihood(x):
+	sigma, c, b = params(x)
 
-
-def loglikelihood(x): 
-	sigma, c, b, X = params(x)
-	#TBD
-	return 0
-
-def gamma_prime():
-	return 0
-
-def gradsum():
-	fi1_p = 
-	return 0
+	N = X.shape[0] # X is NxD
+	K_N = kernel(trainX, trainX, c, b)
+	term = np.diag([sigma] * N) + K_N
+	inv_term = np.linalg.inv(term)
+	L_1 = math.log(np.linalg.det(term))
+	L_2 = np.dot(np.dot(np.transpose(Y), inv_term), Y)
+	return 0.5 * (L_1 + L_2 + N * math.log(2*math.pi))
 
 def params(x0):
 	# extracts the params and stores them into individual variables
@@ -47,19 +49,10 @@ def params(x0):
 	c = x0[1]
 	# extract b
 	b = x0[2:D+2]
-	# extract pseudo-inputs
-	X = x0[D+3:].reshape([M,D])
-	return sigma, c, b, X
-
-#Log likelihood takes a 1D-array with the parameters
-def loglikelihood(x):
-	sigma, c, b, X = params(x)
-	return 0
+	return sigma, c, b
 
 def gradient(x0):
-	sigma, c, b, X = params(x0)
-	# gradient_vec.append()
-	# compute gradient wrt pseudo-inputs
+	sigma, c, b = params(x0)
 
 	# gradient wrt b
 
