@@ -46,7 +46,8 @@ class GaussianProcess(object):
         return function([pred_x],[mu,sigma_p])
 
     def sample(self,domain,samples=10):
-        mu, cp = self.getPosteriorPredictive(domain)
+    	pred = self.getPosteriorPredictive()
+        mu, cp = pred(domain)
         return np.random.multivariate_normal(mu.T[0],cp,samples)
 
     def log_likelihood(self):
@@ -141,11 +142,10 @@ class SparseGaussianProcess(GaussianProcess):
 		GaussianProcess.__init__(self,xtrain,ytrain)
 		self.M = M
 		self.pseudo_points = shared(self.xtrain[:self.M,:],"pseudo_inputs")
-		self.xtrainvariable = T.dmatrix("x_train_v")
-		self.Knn = get_exp(self.xtrainvariable,self.xtrainvariable,self.D,self.b,self.c)
+		self.Knn = get_exp(self.xtrain,self.xtrain,self.D,self.b,self.c)
 		self.Kmm = get_exp(self.pseudo_points,self.pseudo_points,self.D,self.b,self.c)
-		self.Kmn = get_exp(self.pseudo_points,self.xtrainvariable,self.D,self.b,self.c)
-		self.Knm = get_exp(self.xtrainvariable,self.pseudo_points,self.D,self.b,self.c)
+		self.Kmn = get_exp(self.pseudo_points,self.xtrain,self.D,self.b,self.c)
+		self.Knm = get_exp(self.xtrain,self.pseudo_points,self.D,self.b,self.c)
 		self.params = [self.b,self.c,self.sigma, self.pseudo_points]
 
 	def log_likelihood(self):
@@ -161,11 +161,11 @@ class SparseGaussianProcess(GaussianProcess):
 	 	return (psi1+psi2).flatten()[0]
 
 	def getL(self):
-		return function(inputs=[self.xtrainvariable],outputs=[self.log_likelihood()])
+		return function(inputs=[],outputs=[self.log_likelihood()])
 
 	def grad(self):
 		grad = T.grad(self.log_likelihood(),self.params)
-		fn = function(inputs=[self.xtrainvariable], outputs=grad)
+		fn = function(inputs=[], outputs=grad)
 		return fn
 
 	def RMSprop(self,lr=0.001, rho=0.9, epsilon=1e-6): 
@@ -174,16 +174,25 @@ class SparseGaussianProcess(GaussianProcess):
 		rmsprop = optimizers.RMSprop(lr=lr,tho=rho,epsilon=epsilon)
 		train_loss = self.log_likelihood()
 		updates = rmsprop.get_updates(self.params,constraint,train_loss)
-		trainf = function([self.xtrainvariable],[train_loss], updates=updates)
+		trainf = function([],[train_loss], updates=updates)
+		return trainf
+
+	def Adam(self,lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08):
+		constraint = [constraints.NonNeg() for i in [self.b,self.c,self.sigma]]
+		constraint.append(constraints.Constraint())
+		adam = optimizers.Adam(lr=lr,beta_1=beta_1,beta_2=beta_2,epsilon=epsilon)
+		train_loss = self.log_likelihood()
+		updates = adam.get_updates(self.params,constraint,train_loss)
+		trainf = function([],[train_loss], updates=updates)
 		return trainf
 
 	def getPosteriorPredictive(self):
 		pred_x = T.dmatrix("pred_x")
-		gamma = T.diag(self.Knn).eval({self.xtrainvariable:self.xtrain}) + T.power(self.sigma,2.)*T.eye(self.N)
+		gamma = T.diag(self.Knn) + T.power(self.sigma,2.)*T.eye(self.N)
 		gammainv = self.inverter(gamma)
 		K_star_star = get_exp(pred_x,pred_x,self.D,self.b,self.c)
 		K_star_m = get_exp(pred_x,self.pseudo_points,self.D,self.b,self.c)
-		K_x_xp =  self.Kmn.eval({self.xtrainvariable:self.xtrain})
+		K_x_xp =  self.Kmn
 		Qm = self.Kmm + T.dot(T.dot(K_x_xp,gammainv),K_x_xp.T)
 		Qm_inv = self.inverter(Qm)
 		mu1 = T.dot(K_star_m,Qm_inv)
