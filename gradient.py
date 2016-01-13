@@ -15,16 +15,39 @@ def kernel():
 	return 0
 
 
-def loglikelihood():
+def loglikelihood(M=None):
 	return 0
 
 
-def gradient(SPGP=False):
+def gamma_prime():
+	return 0
+
+def gradsum():
+	fi1_p = 
+	return 0
+
+def params(x0, SPGP=False):
+	# extracts the params and stores them into individual variables
+	# params: 
+	# x0 = array with initial values of the parameters
+	# 
+	# extract sigma^2
+	sigma = x0[0]
+	# extract c
+	c = x0[1]
+	b = x0[2:D+2]
+	if SPGP==True:
+		X = x0[D+3:]
+		return sigma, c, b, X
+	return sigma, c, b, X	
+
+def gradient(SPGP=False, M=None):
 	#if SPGP == True:
 		# gradient_vec.append()
 		# compute gradient wrt pseudo-inputs
 
 	# gradient wrt b
+
 
 	# gradient wrt c
 
