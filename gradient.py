@@ -35,11 +35,13 @@ def params(x0, SPGP=False):
 	sigma = x0[0]
 	# extract c
 	c = x0[1]
+	# extract b
 	b = x0[2:D+2]
 	if SPGP==True:
+		# extract pseudo-inputs
 		X = x0[D+3:]
 		return sigma, c, b, X
-	return sigma, c, b, X	
+	return sigma, c, b
 
 def gradient(SPGP=False, M=None):
 	#if SPGP == True:
