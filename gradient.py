@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from utils import *
 from sys import argv
 
@@ -18,6 +19,23 @@ D = trainX.shape[1]
 # define N
 N = trainX.shape[0]
 
+def kernel():
+	return 0
+
+
+
+def loglikelihood(x): 
+	sigma, c, b, X = params(x)
+	#TBD
+	return 0
+
+def gamma_prime():
+	return 0
+
+def gradsum():
+	fi1_p = 
+	return 0
+
 def params(x0):
 	# extracts the params and stores them into individual variables
 	# params: 
@@ -33,15 +51,15 @@ def params(x0):
 	X = x0[D+3:].reshape([M,D])
 	return sigma, c, b, X
 
-def loglikelihood():
+#Log likelihood takes a 1D-array with the parameters
+def loglikelihood(x):
+	sigma, c, b, X = params(x)
 	return 0
 
 def gradient(x0):
 	sigma, c, b, X = params(x0)
 	# gradient_vec.append()
 	# compute gradient wrt pseudo-inputs
-
-	sigma, c, b, X = params(x0)
 
 	# gradient wrt b
 
