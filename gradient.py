@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from utils import *
 
 trainX, trainY, testX, testY = get_all_data("kin40k")
@@ -10,13 +11,30 @@ print trainY.shape
 print testX.shape
 print testY.shape
 
+Y = trainY
 
 def kernel():
 	return 0
 
 
-def loglikelihood(M=None):
-	return 0
+#Log likelihood takes a 1D-array with the parameters
+def loglikelihood(x): 
+	if M:
+		#SPGP case
+		sigma, c, b, X = params(x)
+		#TBD
+		return
+
+	#full GP case
+	sigma, c, b = params(x)
+
+	N = X.shape[0] # X is NxD
+	K_N = kernel(trainX, trainX, c, b)
+	term = np.diag([sigma] * N) + K_N
+	inv_term = np.linalg.inv(term)
+	L_1 = math.log(np.linalg.det(term))
+	L_2 = np.dot(np.dot(np.transpose(Y), inv_term), Y)
+	return 0.5 * (L_1 + L_2 + N * math.log(2*math.pi))
 
 
 def gamma_prime():
