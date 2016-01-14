@@ -1,4 +1,6 @@
 import numpy as np
+import scipy as sp
+import scipy.optimize as opt
 import math
 import random
 from utils import *
@@ -8,7 +10,7 @@ from sys import argv
 class gp():
 
 	#limit is used temporarily to limit n.o training points
-	def __init__(self, M = 10, limit = 100):
+	def __init__(self, M = 20, limit = 1000):
 		trX, trY, tX, tY = get_all_data("kin40k")
 		self.trainX = trX[:limit] if limit else trX
 		self.trainY = trY[:limit] if limit else trY
@@ -22,8 +24,9 @@ class gp():
 	#TODO: Initiate scipy optimizer
 	def run(self):
 		params0 = self.get_initial_params_guess()	
-		return neg_loglikelihood(params0, self.trainX, self.trainY, self.M)
-	
+		#return neg_loglikelihood(params0, self.trainX, self.trainY, self.M)
+		return opt.fmin_cg(neg_loglikelihood, params0, fprime=gradient, args=(self.trainX, self.trainY, self.M))
+
 	#Initial guess of pseudo inputs is random subset of training inputs
 	def get_initial_params_guess(self):
 		c = 0.5
@@ -72,65 +75,69 @@ def neg_loglikelihood(params, X, y, M):
 	phi_1 = math.log(np.linalg.det(innerMatrix))
 	phi_2 = np.dot(np.dot(y.T, np.linalg.inv(innerMatrix)), y)
 
-	return (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
+	logLik = (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
+	print logLik
+	return logLik
 
 #Gradient calculations
 def gradient(params, X, y, M):
 	N, D = X.shape
 	c, sigma2, b, Xbar = unpack_variables(params, D, M)
-	
 	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M)
 
-	gradList = [None for i in range(0, params)]
+	gradList = np.array([0.0 for i in range(0, params.shape[0])])
 	gradList[0] = gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g)
-	gradList[1] = gradient_wrt_sigma2()
-	gradList[2:2+D] = gradient_wrt_b()
-	gradList[2+D:] = gradient_wrt_Xbar()
+	gradList[1] = gradient_wrt_sigma2(y, sigma2, g)
+	gradList[2:2+D] = gradient_wrt_b(X, Xbar, y, sigma2, c, b, M, g)
+	gradList[2+D:] = gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g)
 	return gradList
 
 def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
-	v = variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, 0)
+	return gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 0)
 
-	pd1 = phiDot_1(g, 'c')
-	pd2 = phiDot_2()
-	return 0.5 * (pd1 + pd2)
+def gradient_wrt_b(X, Xbar, y, sigma2, c, b, M, g):
+	D = X.shape[1]
+	gradVec = [None for i in range(0, D)]
+	for i in range(0,D):
+		gradVec[i] = gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 2+i)
+	return gradVec
 
-def gradient_wrt_sigma2(params, X, y, M): #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients 
-	N, D = X.shape
-	c, sigma2, b, Xbar = unpack_variables(params, D, M)
-	K_NM = get_K_NM(X, Xbar, c, b)
-	K_M = get_K_M(Xbar, c, b)
-	K_M_inv = np.linalg.inv(K_M)
-	K_MN = K_NM.T
-	Gamma = get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
-	Gamma_inv = np.linalg.inv(Gamma)
-	A = get_A(sigma2, K_M, K_NM, Gamma)
+def gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g):
+	D = X.shape[1]
+	gradVec = [None for i in range(0, M*D)]
+	for i in range(0, M*D):
+		gradVec[i] = gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 2+D+i)
+	return gradVec
 
+#phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients
+def gradient_wrt_sigma2(y, sigma2, g):
+	Gamma_inv = np.linalg.inv(g['Gamma'])
 	sigma2_inv = math.pow(sigma2, -1)
-	Z = np.dot(K_NM,np.dot(np.linalg.inv(A),K_MN)) #auxiliery 
+	Z = np.dot(g['K_NM'], np.dot(np.linalg.inv(g['A']),g['K_NM'].T)) #auxiliery 
 	U = y.T.dot(Gamma_inv.dot(Z.dot(np.power(Gamma_inv,2).dot(y)))) #auxiliery 
 	phi_1 = sigma2_inv*np.matrix.trace(Gamma_inv) - sigma2_inv * np.matrix.trace(np.dot(Gamma_inv,np.dot(Z,Gamma_inv)))
 	phi_2 = -sigma2_inv**2*(np.linalg.norm(np.dot(Gamma_inv,y))**2 + np.linalg.norm(Gamma_inv.dot(np.dot(Z,np.dot(Gamma_inv,y))))**2-U-U.T)
 	return 0.5 * phi_1 + 0.5 * phi_2
 
-def gradient_wrt_b():
-	pass
+def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
+	v = variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, index)
+	pd1 = phiDot_1(g, v)
+	pd2 = phiDot_2(sigma2, g, v)
+	return 0.5 * (pd1 + pd2)
 
-def gradient_wrt_Xbar():
-	pass
-
-#Derivatives of phi_1 and phi_2 wrt the specified varName variable. Adjust arguments!
-def phiDot_1(gMs):
-        A_term = np.linalg.inv(g['A_half']).dot(v['A_dot'].dot(np.linalg.inv(g['A_half'].T))) #assuming that in derivations A^(T/2) means A^(1/2).T
+#Derivatives of phi_1 and phi_2, using general info in g and variable specific info in v
+#assuming that in derivations A^(T/2) means A^(1/2).T
+def phiDot_1(g, v):
+	A_term = np.linalg.inv(g['A_half']).dot(v['A_dot'].dot(np.linalg.inv(g['A_half'].T))) 
 	Gamma_term = v['Gamma_bar_dot']
-	K_term = np.linalg.inv(g['K_M_half']).dot(v['K_M'].dot(np.linalg.inv(g['K_half'].T)))
+	K_term = np.linalg.inv(g['K_M_half']).dot(v['K_M_dot'].dot(np.linalg.inv(g['K_M_half'].T)))
 	return np.trace(A_term) + np.trace(Gamma_term) - np.trace(K_term)
 
-def phiDot_2():
-        Term1 = - g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['y_Gamma']))
-        Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
-        Term3 = - 2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
-        Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['A_dot'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
+def phiDot_2(sigma2, g, v):
+	Term1 = - g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['y_Gamma']))
+	Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
+	Term3 = -2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
+	Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['A_dot'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
 	return sigma2**(-1) * (Term1 + Term2 + Term3 + Term4)
 
 #Calculations of matrices and vectors used by gradients in a dict
@@ -139,30 +146,32 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M):
 	g = {}
 
 	g['K_M'] = get_K_M(Xbar, c, b)
+	g['K_M_inv'] = np.linalg.inv(g['K_M'])
 	g['K_NM'] = get_K_NM(X, Xbar, c, b)
-	g['Gamma'] = get_Gamma(sigma2, X, Xbar, np.linalg.inv(g['K_M']), c, b)
+	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], c, b)
 	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma'])
 	
 	g['A_half'] = np.linalg.cholesky(g['A']) 
 	g['Gamma_half'] = np.linalg.cholesky(g['Gamma'])
 	g['K_M_half'] = np.linalg.cholesky(g['K_M'])
-	
-	g['y_Gamma'] = np.linalg.inv(g['Gamma_half']).dot(y) 	#newly added
-        g['K_NM_bar'] = np.linalg.inv(g['Gamma_half']).dot(g['K_NM'])           #moved from v
+
+	g['K_NM_bar'] = np.dot(np.linalg.inv(g['Gamma_half']), g['K_NM'])
+	g['y_Gamma'] = np.linalg.inv(g['Gamma_half']).dot(y)
+
 	return g
 
 #Variable specific: different when taking gradient wrt different variables
 def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
-	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, g, varIndex)
-	v['K_NM_bar_dot'] = get_K_NM_bar_dot(g['Gamma_half'], v['K_NM_dot'])
-	v['K_M_dot'] = 
-	#v['K_NM_bar'] = 	#moved into g. OK??!!
-	#This is added
-	v['Gamma_bar_dot'] = get_Gamma_bar_dot(g['Gamma_half'], v['Gamma_dot']) 
-	v['A_dot'] = get_A_dot(sigma2, v['K_M_dot'], v['K_NM_bar_dot'], g['K_NM_bar'], v['Gamma_bar_dot'])
+	v['K_NM_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'NM')
+	v['K_NM_bar_dot'] = np.dot(np.linalg.inv(g['Gamma_half']), v['K_NM_dot'])
+	v['K_M_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'M')
 	
+	v['Gamma_dot'] = get_Gamma_dot(X, c, sigma2, b, g, v, varIndex)
+	v['Gamma_bar_dot'] = np.dot(np.dot(np.linalg.inv(g['Gamma_half']), v['Gamma_dot']), np.linalg.inv(g['Gamma_half']))
+	v['A_dot'] = get_A_dot(sigma2, g, v)
+
 	return v
 
 #Matrix and vector calculations used by neg log likelihood and gradient calculations
@@ -190,51 +199,89 @@ def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
 def get_A(sigma2, K_M, K_NM, Gamma):
 	return sigma2 * K_M + np.dot(np.dot(K_NM.T, np.linalg.inv(Gamma)), K_NM)
 
-#newly added
-def get_A_dot(sigma2, K_M_dot, K_NM_bar_dot, K_NM_bar, Gamma_bar_dot):
-        return sigma2 * K_M_dot + K_NM_bar_dot.T.dot(K_NM_bar) + (K_NM_bar_dot.T.dot(K_NM_bar)).T - K_NM_bar.T.dot(Gamma_bar_dot.dot(K_NM_bar))
-
-def get_Gamma_bar_dot(Gamma_half, Gamma_dot):
-        return np.linalg.inv(Gamma_half).dot(Gamma_dot.dot(np.linalg.inv(Gamma_half.T)))	#Here in Karls derivations a transpose missing?! double check.
-
-def get_K_NM_dot(X, Xbar, c, b, varIndex):
+#Returns a gradient matrix K_NM_dot or K_M_dot
+#varIndex: the index of the relevant variable in the params vector
+#subscript should be either of:
+#'NM': to return K_NM_dot (row inputs are training points)
+#'M': to return K_M_dot (row inputs are pseudo points)
+def get_K_dot(X, Xbar, c, b, g, varIndex, subscript):
 	M, D = Xbar.shape
 
+	#Differentiate between K_NM and K_M
+	dictKey = 'K_' + subscript
+	rowInputs = X if subscript == 'NM' else Xbar
+
 	if varIndex == 0: #c
-		return g['K_NM'] / c
+		return g[dictKey] / c
 
 	#elif varIndex == 1:  #gradient wrt sigma^2 calculated differently
 
 	varIndex -= 2 #b indices start at 2
-	elif varIndex < D: #b_1 to b_D
+	if varIndex < D: #b_1 to b_D
 		
 		#Extract relevant dimension in X and Xbar.
-		X_dim = X[:,varIndex]
+		rowInput_dim = rowInputs[:,varIndex]
 		Xbar_dim = Xbar[:,varIndex]
 
 		#Calculate gradient numerator
-		numerator = (X_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])) ** 2
-		return -0.5 * numerator * g['K_NM']
-
-
+		numerator = np.power(rowInput_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0]), 2)
+		return -0.5 * np.multiply(numerator, g[dictKey])
 
 	#else xbar_1^1 to xbar_M^D
 	varIndex -= D #xbar indices start at 2+D
 	m = varIndex / D #Get the pseudo input index, i.e. m in xbar_m (0 to M-1)
 	d = varIndex % D #Get the relevant dimension, i.e. d in xbar_m^d (0 to D-1)
-	X_dim = X[:,d]
+	rowInput_dim = rowInputs[:,d]
 	Xbar_dim = Xbar[:,d]
 
 	#Calculate gradient differrence term
-	diffTerm = X_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])
+	diffMatrix = rowInput_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])
 
-	#columns different than ones relating to x_m should be 0
-	rowVector = np.zeros((1,M))
+	#In K_NM_dot columns different than ones relating to x_m should be 0
+	rowVector = np.zeros((1, M))
 	rowVector[0][m] = 1
-	diffTerm = diffTerm * rowVector #Will set all other cols than m to 0
+	diff = np.multiply(diffMatrix, rowVector) #Will set all other cols than m to 0
 
-	return b[d] * diffTerm * g['K_NM']
+	#In K_M_dot, the rows also represent pseudo inputs, so the m:th row should not be 0
+	if subscript == 'M':
+		colVector = np.zeros((M, 1))
+		colVector[m][0] = 1
+		diff2 = diffMatrix * rowVector
+		diff = diff + diff2 #elementwise addition (will keep the m,m th element 0) 
 
-def get_K_NM_bar_dot(Gamma_half, K_NM_dot):
-	return np.linalg.inv(Gamma_half).dot(K_NM_dot)
+	return b[d] * np.multiply(diff, g[dictKey]) #elementwise multiplication
 
+#varIndex: the index of the relevant variable in the params vector
+def get_Gamma_dot(X, c, sigma2, b, g, v, varIndex):
+	N, D = X.shape
+
+	Gamma_dot = np.zeros((N,N))
+	for n in range(0,N):
+		K_nn_dot = get_K_nn_dot(X, c, b, n, varIndex)
+		k_n_dot = get_k_n_dot(v, n)
+		k_n = get_k_n(g, n)
+
+		diagVal = K_nn_dot - 2 * np.dot(np.dot(k_n_dot.T, g['K_M_inv']), k_n)
+		diagVal += np.dot(np.dot(np.dot(np.dot(k_n.T, g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), k_n)
+		Gamma_dot[n][n] = diagVal / sigma2
+
+	return Gamma_dot
+
+#0 unless taking derivative wrt c
+def get_K_nn_dot(X, c, b, n, varIndex):
+	if varIndex == 0:
+		return kernel(X[n,:], X[n,:], c, b) / c
+	return 0
+
+#This is the transposed n:th row in K_NM_dot
+def get_k_n_dot(v, n):
+	return (v['K_NM_dot'][n,:]).reshape(((v['K_NM_dot'][n,:]).shape[1], 1))
+
+#This is the transposed n:th row in K_NM
+def get_k_n(g, n):
+	return (g['K_NM'][n,:]).reshape(((g['K_NM'][n,:]).shape[1], 1))
+
+def get_A_dot(sigma2, g, v):
+	A_dot = sigma2 * v['K_M_dot'] + np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])
+	return A_dot + (np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])).T - np.dot(np.dot(g['K_NM_bar'].T, v['Gamma_bar_dot']), g['K_NM_bar'])
+	
