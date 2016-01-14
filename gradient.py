@@ -93,10 +93,25 @@ def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
 
 	pd1 = phiDot_1(g, 'c')
 	pd2 = phiDot_2()
-	return 0.5 * (pd1 + pd2 + N * math.log(2*math.pi))
+	return 0.5 * (pd1 + pd2 + N * math.log(2*math.pi)) #shouldnt it be without the last term since that falls away when deriving?
 
-def gradient_wrt_sigma2():
-	pass
+def gradient_wrt_sigma2(params, X, y, M): #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients 
+        N, D = X.shape
+        c, sigma2, b, Xbar = unpack_variables(params, D, M)
+        K_NM = get_K_NM(X, Xbar, c, b)
+	K_M = get_K_M(Xbar, c, b)
+	K_M_inv = np.linalg.inv(K_M)
+	K_MN = K_NM.T
+        Gamma = get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
+        Gamma_inv = np.linalg.inv(Gamma)
+        A = get_A(sigma2, K_M, K_NM, Gamma)
+        
+        sigma2_inv = math.pow(sigma2, -1)
+        Z = np.dot(K_NM,np.dot(np.linalg.inv(A),K_MN)) #auxiliery 
+        U = y.T.dot(Gamma_inv.dot(Z.dot(np.power(Gamma_inv,2).dot(y)))) #auxiliery 
+        phi_1 = sigma2_inv*np.matrix.trace(Gamma_inv) - sigma2_inv * np.matrix.trace(np.dot(Gamma_inv,np.dot(Z,Gamma_inv)))
+        phi_2 = -sigma2_inv**2*(np.linalg.norm(np.dot(Gamma_inv,y))**2 + np.linalg.norm(Gamma_inv.dot(np.dot(Z,np.dot(Gamma_inv,y))))**2-U-U.T)
+        return 0.5 * phi_1 + 0.5 * phi_2
 
 def gradient_wrt_b():
 	pass
@@ -172,7 +187,7 @@ def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
 
 #TODO: better inversion of Gamma?
 def get_A(sigma2, K_M, K_NM, Gamma):
-	return sigma2 * K_M + np.dot(np.dot(np.dot(K_NM.T), np.linalg.inv(Gamma)), K_NM)
+	return sigma2 * K_M + np.dot(np.dot(K_NM.T, np.linalg.inv(Gamma)), K_NM)
 
 def get_K_NM_dot(X, Xbar, c, b, varIndex):
 	D = X.shape[1]
