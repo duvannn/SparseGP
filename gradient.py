@@ -156,12 +156,12 @@ def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
 	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, g, varIndex)
-	v['K_NM_bar_dot'] = np.linalg.inv(g['Gamma_half']).dot(v['K_NM_dot'])
+	v['K_NM_bar_dot'] = get_K_NM_bar_dot(g['Gamma_half'], v['K_NM_dot'])
 	v['K_M_dot'] = 
 	#v['K_NM_bar'] = 	#moved into g. OK??!!
 	#This is added
-	v['Gamma_bar_dot'] = np.linalg.inv(g['Gamma_half']).dot(v['Gamma_dot'].dot(np.linalg.inv(g['Gamma_half'].T))) #Here in Karls derivations a transpose missing?! double check.
-	v['A_dot'] = sigma2 * v['K_M_dot'] + v['K_NM_bar_dot'].T.dot(g['K_NM_bar']) + (v['K_NM_bar_dot'].T.dot(g['K_NM_bar'])).T - g['K_NM_bar'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar']))
+	v['Gamma_bar_dot'] = get_Gamma_bar_dot(g['Gamma_half'], v['Gamma_dot']) 
+	v['A_dot'] = get_A_dot(sigma2, v['K_M_dot'], v['K_NM_bar_dot'], g['K_NM_bar'], v['Gamma_bar_dot'])
 	
 	return v
 
@@ -189,6 +189,13 @@ def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
 #TODO: better inversion of Gamma?
 def get_A(sigma2, K_M, K_NM, Gamma):
 	return sigma2 * K_M + np.dot(np.dot(K_NM.T, np.linalg.inv(Gamma)), K_NM)
+
+#newly added
+def get_A_dot(sigma2, K_M_dot, K_NM_bar_dot, K_NM_bar, Gamma_bar_dot):
+        return sigma2 * K_M_dot + K_NM_bar_dot.T.dot(K_NM_bar) + (K_NM_bar_dot.T.dot(K_NM_bar)).T - K_NM_bar.T.dot(Gamma_bar_dot.dot(K_NM_bar))
+
+def get_Gamma_bar_dot(Gamma_half, Gamma_dot):
+        return np.linalg.inv(Gamma_half).dot(Gamma_dot.dot(np.linalg.inv(Gamma_half.T)))	#Here in Karls derivations a transpose missing?! double check.
 
 def get_K_NM_dot(X, Xbar, c, b, varIndex):
 	M, D = Xbar.shape
@@ -228,4 +235,6 @@ def get_K_NM_dot(X, Xbar, c, b, varIndex):
 
 	return b[d] * diffTerm * g['K_NM']
 
+def get_K_NM_bar_dot(Gamma_half, K_NM_dot):
+	return np.linalg.inv(Gamma_half).dot(K_NM_dot)
 
