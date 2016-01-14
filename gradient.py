@@ -4,7 +4,7 @@ import random
 from utils import *
 from sys import argv
 
-#params structure [c, sigma^2, b_1,...,b_D, x_1^1,...,x_D^1, ..., x_1^M,...,x_D^M]
+#params structure [c, sigma^2, b_1,...,b_D, xbar_1^1,...,xbar_D^1, ..., xbar_1^M,...,xbar_D^M]
 class gp():
 
 	#limit is used temporarily to limit n.o training points
@@ -32,7 +32,8 @@ class gp():
 		Xbar = self.trainX[random.sample(range(0, self.trainX.shape[0]), self.M),:]
 		return pack_variables(c, sigma2, b, Xbar)
 
-#Kernel takes two matrices of data, can be both trainX or both pseudo or a mix.
+#Kernel calculations
+#KernelMatrix takes two matrices of data, can be both trainX or both pseudo or a mix.
 def kernelMatrix(X,Y,c,b): 
     scaledX = np.multiply(np.sqrt(b),X)
     scaledY = np.multiply(np.sqrt(b),Y)
@@ -43,6 +44,12 @@ def kernelMatrix(X,Y,c,b):
 def kernel(x_1, x_2, c, b):
 	return c * math.exp( -0.5 * np.sum(b * (np.array(x_1 - x_2) ** 2)))
 
+#Vectorizing and unvectorizing variables for use in scipy optimizer
+def pack_variables(c, sigma2, b, Xbar):
+	b_list = b.tolist()[0]
+	Xbar_list = Xbar.reshape(1, Xbar.shape[0] * Xbar.shape[1]).tolist()[0]
+	return np.array([c, sigma2] + b_list + Xbar_list)
+
 def unpack_variables(params, D, M):
 	c = params[0]
 	sigma2 = params[1]
@@ -50,56 +57,43 @@ def unpack_variables(params, D, M):
 	Xbar = params[2+D:].reshape(M,D)
 	return c, sigma2, b, Xbar
 
-def pack_variables(c, sigma2, b, Xbar):
-	b_list = b.tolist()[0]
-	Xbar_list = Xbar.reshape(1, Xbar.shape[0] * Xbar.shape[1]).tolist()[0]
-	return np.array([c, sigma2] + b_list + Xbar_list)
-
+#Neg log likelihood calculations
 def neg_loglikelihood(params, X, y, M):
 	N, D = X.shape
 	c, sigma2, b, Xbar = unpack_variables(params, D, M)
 	
 	#TODO: update with less expensive calculations
-	K_NM = kernelMatrix(X,Xbar,c,b)
-	K_M = kernelMatrix(Xbar,Xbar,c,b)
+	K_NM = get_K_NM(X, Xbar, c, b)
+	K_M = get_K_M(Xbar, c, b)
 	K_M_inv = np.linalg.inv(K_M)
-	K_MN = K_NM.T
+	s2G = sigma2 * get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
 
-	s2G = sigma2Gamma(sigma2, X, Xbar, K_M_inv, c, b)
-
-	innerMatrix = s2G + np.dot(np.dot(K_NM, K_M_inv), K_MN)
+	innerMatrix = s2G + np.dot(np.dot(K_NM, K_M_inv), K_NM.T)
 	phi_1 = math.log(np.linalg.det(innerMatrix))
 	phi_2 = np.dot(np.dot(y.T, np.linalg.inv(innerMatrix)), y)
 
 	return (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
 
-def sigma2Gamma(sigma2, X, Xbar, K_M_inv, c, b):
-	N = X.shape[0]
-	sigma2_I = np.zeros((N,N))
-	np.fill_diagonal(sigma2_I, sigma2)
-
-	Lambda = np.zeros((N,N))
-	for n in range(0,N):
-		x_n = X[n,:]
-		K_nn = kernel(x_n, x_n, c, b)
-		k_x_n = kernelMatrix(Xbar, x_n, c, b)
-		f = np.dot(k_x_n.T, K_M_inv)
-		Lambda[n][n] =  K_nn - np.dot(f, k_x_n)[0,0]
-
-	return sigma2_I + Lambda
-
+#Gradient calculations
 def gradient(params, X, y, M):
 	N, D = X.shape
 	c, sigma2, b, Xbar = unpack_variables(params, D, M)
+	
+	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M)
+
 	gradList = [None for i in range(0, params)]
-	gradList[0] = gradient_wrt_c()
+	gradList[0] = gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g)
 	gradList[1] = gradient_wrt_sigma2()
 	gradList[2:2+D] = gradient_wrt_b()
 	gradList[2+D:] = gradient_wrt_Xbar()
 	return gradList
 
-def gradient_wrt_c():
-	pass
+def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
+	v = variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, 0)
+
+	pd1 = phiDot_1(g, 'c')
+	pd2 = phiDot_2()
+	return 0.5 * (pd1 + pd2 + N * math.log(2*math.pi))
 
 def gradient_wrt_sigma2():
 	pass
@@ -109,3 +103,86 @@ def gradient_wrt_b():
 
 def gradient_wrt_Xbar():
 	pass
+
+#Derivatives of phi_1 and phi_2 wrt the specified varName variable
+def phiDot_1(gMs):
+	
+
+
+
+	Gamma_term
+
+
+	K_term
+	return np.trace(A_term) + np.trace(Gamma_term) - np.trace(K_term)
+
+
+def phiDot_2():
+	pass
+
+#Calculations of matrices and vectors used by gradients in a dict
+#General: used by all gradients
+def generalGradientVars(X, Xbar, y, sigma2, c, b, M):
+	g = {}
+
+	g['K_M'] = get_K_M(Xbar, c, b)
+	g['K_NM'] = get_K_NM(X, Xbar, c, b)
+	g['Gamma'] = get_Gamma(sigma2, X, Xbar, np.linalg.inv(g['K_M']), c, b)
+	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma'])
+	
+	g['A_half'] = np.linalg.cholesky(g['A']) 
+	g['Gamma_half'] = np.linalg.cholesky(g['Gamma'])
+	g['K_M_half'] = np.linalg.cholesky(g['K_M'])
+
+	return g
+
+#Variable specific: different when taking gradient wrt different variables
+def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
+	v = {}
+
+	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, varIndex)
+	v['K_NM_bar_dot'] = 
+	v['K_M_dot'] = 
+	v['K_NM_bar'] = 
+	v['Gamma_bar_dot'] =
+	v['A_dot'] = 
+
+	return v
+
+#Matrix and vector calculations used by neg log likelihood and gradient calculations
+def get_K_M(Xbar, c, b):
+	return kernelMatrix(Xbar,Xbar,c,b)
+
+def get_K_NM(X, Xbar, c, b):
+	return kernelMatrix(X,Xbar,c,b)
+
+def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
+	N = X.shape[0]
+	I = np.identity(N)
+	
+	Lambda = np.zeros((N,N))
+	for n in range(0, N):
+		x_n = X[n,:]
+		K_nn = kernel(x_n, x_n, c, b)
+		k_x_n = kernelMatrix(Xbar, x_n, c, b)
+		f = np.dot(k_x_n.T, K_M_inv)
+		Lambda[n][n] =  K_nn - np.dot(f, k_x_n)[0,0]
+
+	return I + Lambda / sigma2
+
+#TODO: better inversion of Gamma?
+def get_A(sigma2, K_M, K_NM, Gamma):
+	return sigma2 * K_M + np.dot(np.dot(np.dot(K_NM.T), np.linalg.inv(Gamma)), K_NM)
+
+def get_K_NM_dot(X, Xbar, c, b, varIndex):
+	D = X.shape[1]
+
+	if varIndex == 0: #c
+		
+	elif varIndex == 1: #sigma^2
+
+	elif varIndex < 2+D: #b_1 to b_D
+
+
+	#else xbar_1^1 to xbar_D^M
+
