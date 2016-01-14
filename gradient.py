@@ -197,7 +197,15 @@ def get_K_NM_dot(X, Xbar, c, b, varIndex):
 	elif varIndex == 1: #sigma^2
 
 	elif varIndex < 2+D: #b_1 to b_D
-
+                K_N = get_K_M(X, c, b)
+                K_NM_dot_list = [None for i in range(0, D)]
+                for d in range(0,D)                        
+                        Distances = np.power(X[:,d], 2).reshape((X.shape[0], 1)) + np.power(X[:,d], 2).reshape((1, X.shape[0])) - 2 * X[:,d].reshape((X.shape[0], 1)) * X[:,d].reshape((1, X.shape[0]))
+                        K_NM_dot_list[d] = -0.5*np.multiply(Distances,K_N)
+                        
 
 	#else xbar_1^1 to xbar_D^M
+        return K_NM_dot_list
+
+
 
