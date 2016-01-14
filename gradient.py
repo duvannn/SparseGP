@@ -119,21 +119,19 @@ def gradient_wrt_b():
 def gradient_wrt_Xbar():
 	pass
 
-#Derivatives of phi_1 and phi_2 wrt the specified varName variable
+#Derivatives of phi_1 and phi_2 wrt the specified varName variable. Adjust arguments!
 def phiDot_1(gMs):
-	
-
-
-
-	Gamma_term
-
-
-	K_term
+        A_term = np.linalg.inv(g['A_half']).dot(v['A_dot'].dot(np.linalg.inv(g['A_half'].T))) #assuming that in derivations A^(T/2) means A^(1/2).T
+	Gamma_term = v['Gamma_bar_dot']
+	K_term = np.linalg.inv(g['K_M_half']).dot(v['K_M'].dot(np.linalg.inv(g['K_half'].T)))
 	return np.trace(A_term) + np.trace(Gamma_term) - np.trace(K_term)
 
-
 def phiDot_2():
-	pass
+        Term1 = - g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['y_Gamma']))
+        Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
+        Term3 = - 2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
+        Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['A_dot'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
+	return sigma2**(-1) * (Term1 + Term2 + Term3 + Term4)
 
 #Calculations of matrices and vectors used by gradients in a dict
 #General: used by all gradients
@@ -148,7 +146,9 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M):
 	g['A_half'] = np.linalg.cholesky(g['A']) 
 	g['Gamma_half'] = np.linalg.cholesky(g['Gamma'])
 	g['K_M_half'] = np.linalg.cholesky(g['K_M'])
-
+	
+	g['y_Gamma'] = np.linalg.inv(g['Gamma_half']).dot(y) 	#newly added
+        g['K_NM_bar'] = np.linalg.inv(g['Gamma_half']).dot(g['K_NM'])           #moved from v
 	return g
 
 #Variable specific: different when taking gradient wrt different variables
@@ -156,12 +156,13 @@ def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
 	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, g, varIndex)
-	v['K_NM_bar_dot'] = 
+	v['K_NM_bar_dot'] = np.linalg.inv(g['Gamma_half']).dot(v['K_NM_dot'])
 	v['K_M_dot'] = 
-	v['K_NM_bar'] = 
-	v['Gamma_bar_dot'] =
-	v['A_dot'] = 
-
+	#v['K_NM_bar'] = 	#moved into g. OK??!!
+	#This is added
+	v['Gamma_bar_dot'] = np.linalg.inv(g['Gamma_half']).dot(v['Gamma_dot'].dot(np.linalg.inv(g['Gamma_half'].T))) #Here in Karls derivations a transpose missing?! double check.
+	v['A_dot'] = sigma2 * v['K_M_dot'] + v['K_NM_bar_dot'].T.dot(g['K_NM_bar']) + (v['K_NM_bar_dot'].T.dot(g['K_NM_bar'])).T - g['K_NM_bar'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar']))
+	
 	return v
 
 #Matrix and vector calculations used by neg log likelihood and gradient calculations
@@ -208,17 +209,7 @@ def get_K_NM_dot(X, Xbar, c, b, varIndex):
 		numerator = (X_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])) ** 2
 		return -0.5 * numerator * g['K_NM']
 
-		#################
- 		K_N = get_K_M(X, c, b)
-		K_NM_dot_list = [None for i in range(0, D)]
-		for d in range(0,D):                        
-			Distances = np.power(X[:,d], 2).reshape((X.shape[0], 1)) + np.power(X[:,d], 2).reshape((1, X.shape[0])) - 2 * X[:,d].reshape((X.shape[0], 1)) * X[:,d].reshape((1, X.shape[0]))
-			K_NM_dot_list[d] = -0.5*np.multiply(Distances,K_N)
-                 
- 
- 	#else xbar_1^1 to xbar_D^M
-	return K_NM_dot_list
-	#################
+
 
 	#else xbar_1^1 to xbar_M^D
 	varIndex -= D #xbar indices start at 2+D
