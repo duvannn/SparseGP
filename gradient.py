@@ -35,11 +35,11 @@ class gp():
 #Kernel calculations
 #KernelMatrix takes two matrices of data, can be both trainX or both pseudo or a mix.
 def kernelMatrix(X,Y,c,b): 
-    scaledX = np.multiply(np.sqrt(b),X)
-    scaledY = np.multiply(np.sqrt(b),Y)
-    squared_distances = np.power(scaledX, 2).sum(1).reshape((scaledX.shape[0], 1)) + (np.power(scaledY, 2)).sum(1).reshape((1, scaledY.shape[0])) - 2 * scaledX.dot(scaledY.T)
-    K = c*np.exp(-0.5*squared_distances)
-    return K
+	scaledX = np.multiply(np.sqrt(b),X)
+	scaledY = np.multiply(np.sqrt(b),Y)
+	squared_distances = np.power(scaledX, 2).sum(1).reshape((scaledX.shape[0], 1)) + (np.power(scaledY, 2)).sum(1).reshape((1, scaledY.shape[0])) - 2 * scaledX.dot(scaledY.T)
+	K = c*np.exp(-0.5*squared_distances)
+	return K
 
 def kernel(x_1, x_2, c, b):
 	return c * math.exp( -0.5 * np.sum(b * (np.array(x_1 - x_2) ** 2)))
