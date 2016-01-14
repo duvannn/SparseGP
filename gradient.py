@@ -4,7 +4,7 @@ import random
 from utils import *
 from sys import argv
 
-#params structure [c, sigma^2, b_1,...,b_D, xbar_1^1,...,xbar_D^1, ..., xbar_1^M,...,xbar_D^M]
+#params structure [c, sigma^2, b_1,...,b_D, xbar_1^1,...,xbar_1^D, ..., xbar_M^1,...,xbar_M^D]
 class gp():
 
 	#limit is used temporarily to limit n.o training points
@@ -93,25 +93,25 @@ def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
 
 	pd1 = phiDot_1(g, 'c')
 	pd2 = phiDot_2()
-	return 0.5 * (pd1 + pd2 + N * math.log(2*math.pi)) #shouldnt it be without the last term since that falls away when deriving?
+	return 0.5 * (pd1 + pd2)
 
 def gradient_wrt_sigma2(params, X, y, M): #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients 
-        N, D = X.shape
-        c, sigma2, b, Xbar = unpack_variables(params, D, M)
-        K_NM = get_K_NM(X, Xbar, c, b)
+	N, D = X.shape
+	c, sigma2, b, Xbar = unpack_variables(params, D, M)
+	K_NM = get_K_NM(X, Xbar, c, b)
 	K_M = get_K_M(Xbar, c, b)
 	K_M_inv = np.linalg.inv(K_M)
 	K_MN = K_NM.T
-        Gamma = get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
-        Gamma_inv = np.linalg.inv(Gamma)
-        A = get_A(sigma2, K_M, K_NM, Gamma)
-        
-        sigma2_inv = math.pow(sigma2, -1)
-        Z = np.dot(K_NM,np.dot(np.linalg.inv(A),K_MN)) #auxiliery 
-        U = y.T.dot(Gamma_inv.dot(Z.dot(np.power(Gamma_inv,2).dot(y)))) #auxiliery 
-        phi_1 = sigma2_inv*np.matrix.trace(Gamma_inv) - sigma2_inv * np.matrix.trace(np.dot(Gamma_inv,np.dot(Z,Gamma_inv)))
-        phi_2 = -sigma2_inv**2*(np.linalg.norm(np.dot(Gamma_inv,y))**2 + np.linalg.norm(Gamma_inv.dot(np.dot(Z,np.dot(Gamma_inv,y))))**2-U-U.T)
-        return 0.5 * phi_1 + 0.5 * phi_2
+	Gamma = get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
+	Gamma_inv = np.linalg.inv(Gamma)
+	A = get_A(sigma2, K_M, K_NM, Gamma)
+
+	sigma2_inv = math.pow(sigma2, -1)
+	Z = np.dot(K_NM,np.dot(np.linalg.inv(A),K_MN)) #auxiliery 
+	U = y.T.dot(Gamma_inv.dot(Z.dot(np.power(Gamma_inv,2).dot(y)))) #auxiliery 
+	phi_1 = sigma2_inv*np.matrix.trace(Gamma_inv) - sigma2_inv * np.matrix.trace(np.dot(Gamma_inv,np.dot(Z,Gamma_inv)))
+	phi_2 = -sigma2_inv**2*(np.linalg.norm(np.dot(Gamma_inv,y))**2 + np.linalg.norm(Gamma_inv.dot(np.dot(Z,np.dot(Gamma_inv,y))))**2-U-U.T)
+	return 0.5 * phi_1 + 0.5 * phi_2
 
 def gradient_wrt_b():
 	pass
@@ -155,7 +155,7 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M):
 def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
-	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, varIndex)
+	v['K_NM_dot'] = get_K_NM_dot(X, Xbar, c, b, g, varIndex)
 	v['K_NM_bar_dot'] = 
 	v['K_M_dot'] = 
 	v['K_NM_bar'] = 
@@ -190,14 +190,51 @@ def get_A(sigma2, K_M, K_NM, Gamma):
 	return sigma2 * K_M + np.dot(np.dot(K_NM.T, np.linalg.inv(Gamma)), K_NM)
 
 def get_K_NM_dot(X, Xbar, c, b, varIndex):
-	D = X.shape[1]
+	M, D = Xbar.shape
 
 	if varIndex == 0: #c
+		return g['K_NM'] / c
+
+	#elif varIndex == 1:  #gradient wrt sigma^2 calculated differently
+
+	varIndex -= 2 #b indices start at 2
+	elif varIndex < D: #b_1 to b_D
 		
-	elif varIndex == 1: #sigma^2
+		#Extract relevant dimension in X and Xbar.
+		X_dim = X[:,varIndex]
+		Xbar_dim = Xbar[:,varIndex]
 
-	elif varIndex < 2+D: #b_1 to b_D
+		#Calculate gradient numerator
+		numerator = (X_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])) ** 2
+		return -0.5 * numerator * g['K_NM']
 
+		#################
+ 		K_N = get_K_M(X, c, b)
+		K_NM_dot_list = [None for i in range(0, D)]
+		for d in range(0,D):                        
+			Distances = np.power(X[:,d], 2).reshape((X.shape[0], 1)) + np.power(X[:,d], 2).reshape((1, X.shape[0])) - 2 * X[:,d].reshape((X.shape[0], 1)) * X[:,d].reshape((1, X.shape[0]))
+			K_NM_dot_list[d] = -0.5*np.multiply(Distances,K_N)
+                 
+ 
+ 	#else xbar_1^1 to xbar_D^M
+	return K_NM_dot_list
+	#################
 
-	#else xbar_1^1 to xbar_D^M
+	#else xbar_1^1 to xbar_M^D
+	varIndex -= D #xbar indices start at 2+D
+	m = varIndex / D #Get the pseudo input index, i.e. m in xbar_m (0 to M-1)
+	d = varIndex % D #Get the relevant dimension, i.e. d in xbar_m^d (0 to D-1)
+	X_dim = X[:,d]
+	Xbar_dim = Xbar[:,d]
+
+	#Calculate gradient differrence term
+	diffTerm = X_dim - Xbar_dim.reshape(1, Xbar_dim.shape[0])
+
+	#columns different than ones relating to x_m should be 0
+	rowVector = np.zeros((1,M))
+	rowVector[0][m] = 1
+	diffTerm = diffTerm * rowVector #Will set all other cols than m to 0
+
+	return b[d] * diffTerm * g['K_NM']
+
 
