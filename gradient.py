@@ -10,7 +10,7 @@ from sys import argv
 class gp():
 
 	#limit is used temporarily to limit n.o training points
-	def __init__(self, M = 20, limit = 1000):
+	def __init__(self, M = 10, limit = 300):
 		trX, trY, tX, tY = get_all_data("kin40k")
 		self.trainX = trX[:limit] if limit else trX
 		self.trainY = trY[:limit] if limit else trY
@@ -23,9 +23,26 @@ class gp():
 
 	#TODO: Initiate scipy optimizer
 	def run(self):
-		params0 = self.get_initial_params_guess()	
+		params0 = self.get_initial_params_guess()
+		neg_loglikelihood(params0, self.trainX, self.trainY, self.M)
+		return opt.minimize(fun=neg_loglikelihood, 
+							x0=params0,
+							args=(self.trainX, self.trainY, self.M), 
+							method='L-BFGS-B',
+							jac=gradient, 
+							bounds=[(0, None), (0.0000000000001, None), 
+							(0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None), (0.0000000000001, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None),
+							(None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None), (None, None)])
 		#return neg_loglikelihood(params0, self.trainX, self.trainY, self.M)
-		return opt.fmin_cg(neg_loglikelihood, params0, fprime=gradient, args=(self.trainX, self.trainY, self.M))
 
 	#Initial guess of pseudo inputs is random subset of training inputs
 	def get_initial_params_guess(self):
@@ -37,15 +54,19 @@ class gp():
 
 #Kernel calculations
 #KernelMatrix takes two matrices of data, can be both trainX or both pseudo or a mix.
-def kernelMatrix(X,Y,c,b): 
-	scaledX = np.multiply(np.sqrt(b),X)
-	scaledY = np.multiply(np.sqrt(b),Y)
-	squared_distances = np.power(scaledX, 2).sum(1).reshape((scaledX.shape[0], 1)) + (np.power(scaledY, 2)).sum(1).reshape((1, scaledY.shape[0])) - 2 * scaledX.dot(scaledY.T)
+def kernelMatrix(X,Y,c,b):
+	scaledX = np.multiply(b, X) # elementwise mult: each dimension d is now (b^d)(x^d)
+	scaledY = np.multiply(b, Y)
+	scaledX2 = np.power(scaledX, 2) / b # each dimension d is now (b^d)^2(x^d)^2 / b^d
+	scaledY2 = np.power(scaledY, 2) / b
+
+	squared_distances = scaledX2.sum(1).reshape((scaledX.shape[0], 1)) + scaledY2.sum(1).reshape((1, scaledY.shape[0])) - 2 * scaledX.dot(Y.T)
 	K = c*np.exp(-0.5*squared_distances)
 	return K
 
+#(actually only used when sending in identical inputs, so the output is always c)
 def kernel(x_1, x_2, c, b):
-	return c * math.exp( -0.5 * np.sum(b * (np.array(x_1 - x_2) ** 2)))
+	return c * math.exp( -0.5 * np.sum(np.multiply(b, np.power(x_1 - x_2, 2))))
 
 #Vectorizing and unvectorizing variables for use in scipy optimizer
 def pack_variables(c, sigma2, b, Xbar):
@@ -65,31 +86,39 @@ def neg_loglikelihood(params, X, y, M):
 	N, D = X.shape
 	c, sigma2, b, Xbar = unpack_variables(params, D, M)
 	
-	#TODO: update with less expensive calculations
-	K_NM = get_K_NM(X, Xbar, c, b)
-	K_M = get_K_M(Xbar, c, b)
-	K_M_inv = np.linalg.inv(K_M)
-	s2G = sigma2 * get_Gamma(sigma2, X, Xbar, K_M_inv, c, b)
+	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M, True) #ok
+	
+	#print "np.linalg.det(g['A']): " + str(np.linalg.det(g['A']))
+	#print "np.linalg.det(g['Gamma']): " + str(np.linalg.det(g['Gamma']))
+	#print "np.linalg.det(g['K_M']): " + str(np.linalg.det(g['K_M']))
+	#print "sigma2 " + str(sigma2)
+	
+	a1 = abs(np.linalg.det(g['A']))
+	a2 = abs(np.linalg.det(g['Gamma']))
+	a3 = abs(np.linalg.det(g['K_M']))
 
-	innerMatrix = s2G + np.dot(np.dot(K_NM, K_M_inv), K_NM.T)
-	phi_1 = math.log(np.linalg.det(innerMatrix))
-	phi_2 = np.dot(np.dot(y.T, np.linalg.inv(innerMatrix)), y)
+	phi_1 = math.log(a1) + math.log(a2) - math.log(a3) 
+	phi_1 += (N-M) * math.log(sigma2)
 
-	logLik = (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
-	print logLik
-	return logLik
+	innerMatrix = g['Gamma_inv'] - np.dot(g['Gamma_inv'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, g['Gamma_inv']))))
+	phi_2 = (sigma2 ** (-1)) * np.dot(y.T, np.dot(innerMatrix, y))
+
+	loglikelihood = (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
+	print "loglikelihood: " + str(loglikelihood)
+	return loglikelihood
 
 #Gradient calculations
 def gradient(params, X, y, M):
 	N, D = X.shape
 	c, sigma2, b, Xbar = unpack_variables(params, D, M)
-	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M)
+	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M) #ok
 
 	gradList = np.array([0.0 for i in range(0, params.shape[0])])
 	gradList[0] = gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g)
 	gradList[1] = gradient_wrt_sigma2(y, sigma2, g)
 	gradList[2:2+D] = gradient_wrt_b(X, Xbar, y, sigma2, c, b, M, g)
 	gradList[2+D:] = gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g)
+	#print gradList
 	return gradList
 
 def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
@@ -97,26 +126,27 @@ def gradient_wrt_c(X, Xbar, y, sigma2, c, b, M, g):
 
 def gradient_wrt_b(X, Xbar, y, sigma2, c, b, M, g):
 	D = X.shape[1]
-	gradVec = [None for i in range(0, D)]
+	gradVec = [0.0 for i in range(0, D)]
 	for i in range(0,D):
 		gradVec[i] = gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 2+i)
 	return gradVec
 
 def gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g):
 	D = X.shape[1]
-	gradVec = [None for i in range(0, M*D)]
+	gradVec = [0.0 for i in range(0, M*D)]
 	for i in range(0, M*D):
 		gradVec[i] = gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 2+D+i)
 	return gradVec
 
 #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients
 def gradient_wrt_sigma2(y, sigma2, g):
-	Gamma_inv = np.linalg.inv(g['Gamma'])
 	sigma2_inv = math.pow(sigma2, -1)
-	Z = np.dot(g['K_NM'], np.dot(np.linalg.inv(g['A']),g['K_NM'].T)) #auxiliery 
-	U = y.T.dot(Gamma_inv.dot(Z.dot(np.power(Gamma_inv,2).dot(y)))) #auxiliery 
-	phi_1 = sigma2_inv*np.matrix.trace(Gamma_inv) - sigma2_inv * np.matrix.trace(np.dot(Gamma_inv,np.dot(Z,Gamma_inv)))
-	phi_2 = -sigma2_inv**2*(np.linalg.norm(np.dot(Gamma_inv,y))**2 + np.linalg.norm(Gamma_inv.dot(np.dot(Z,np.dot(Gamma_inv,y))))**2-U-U.T)
+	Z = np.dot(g['K_NM'], np.dot(g['A_inv'],g['K_NM'].T)) #auxiliery 
+	U = y.T.dot(g['Gamma_inv'].dot(Z.dot(np.power(g['Gamma_inv'],2).dot(y)))) #auxiliery 
+	
+	phi_1 = sigma2_inv * np.trace(g['Gamma_inv']) - sigma2_inv * np.trace(np.dot(g['Gamma_inv'],np.dot(Z,g['Gamma_inv'])))
+	#phi_2 = -(sigma2_inv**2)*(np.linalg.norm(np.dot(g['Gamma_inv'],y))**2 + np.linalg.norm(g['Gamma_inv'].dot(np.dot(Z,np.dot(g['Gamma_inv'],y))))**2-U-U.T)
+	phi_2 = -(sigma2_inv**2) * np.linalg.norm(np.dot(g['Gamma_inv'] - np.dot(g['Gamma_inv'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, g['Gamma_inv'])))), y))**2
 	return 0.5 * phi_1 + 0.5 * phi_2
 
 def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
@@ -128,35 +158,81 @@ def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
 #Derivatives of phi_1 and phi_2, using general info in g and variable specific info in v
 #assuming that in derivations A^(T/2) means A^(1/2).T
 def phiDot_1(g, v):
-	A_term = np.linalg.inv(g['A_half']).dot(v['A_dot'].dot(np.linalg.inv(g['A_half'].T))) 
+	A_term = g['A_half_inv'].dot(v['A_dot'].dot(g['A_half_inv'].T)) 
 	Gamma_term = v['Gamma_bar_dot']
-	K_term = np.linalg.inv(g['K_M_half']).dot(v['K_M_dot'].dot(np.linalg.inv(g['K_M_half'].T)))
+	K_term = g['K_M_half_inv'].dot(v['K_M_dot'].dot(g['K_M_half_inv'].T))
 	return np.trace(A_term) + np.trace(Gamma_term) - np.trace(K_term)
 
 def phiDot_2(sigma2, g, v):
 	Term1 = - g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['y_Gamma']))
-	Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
-	Term3 = -2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
-	Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(np.linalg.inv(g['A']).dot(v['A_dot'].dot(np.linalg.inv(g['A']).dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
+	Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(g['A_inv'].dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
+	Term3 = -2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(g['A_inv'].dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
+	Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(g['A_inv'].dot(v['A_dot'].dot(g['A_inv'].dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
 	return sigma2**(-1) * (Term1 + Term2 + Term3 + Term4)
 
 #Calculations of matrices and vectors used by gradients in a dict
 #General: used by all gradients
-def generalGradientVars(X, Xbar, y, sigma2, c, b, M):
+#also used in calculation of loglikelihood, but we don't need to include all calculations.
+def generalGradientVars(X, Xbar, y, sigma2, c, b, M, loglikelihoodCalcs = False):
 	g = {}
 
-	g['K_M'] = get_K_M(Xbar, c, b)
-	g['K_M_inv'] = np.linalg.inv(g['K_M'])
-	g['K_NM'] = get_K_NM(X, Xbar, c, b)
-	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], c, b)
-	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma'])
+	g['K_M'] = get_K_M(Xbar, c, b) #ok
 	
-	g['A_half'] = np.linalg.cholesky(g['A']) 
-	g['Gamma_half'] = np.linalg.cholesky(g['Gamma'])
-	g['K_M_half'] = np.linalg.cholesky(g['K_M'])
+	print g['K_M'] 
+	g['K_M_inv'] = np.linalg.inv(g['K_M']) #ok
+	g['K_NM'] = get_K_NM(X, Xbar, c, b) #ok
 
-	g['K_NM_bar'] = np.dot(np.linalg.inv(g['Gamma_half']), g['K_NM'])
-	g['y_Gamma'] = np.linalg.inv(g['Gamma_half']).dot(y)
+	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], c, b) #ok
+	g['Gamma_inv'] = np.linalg.inv(g['Gamma'])
+	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma_inv']) #ok 
+	g['A_inv'] = np.linalg.inv(g['A'])
+
+	if loglikelihoodCalcs: return g
+
+	#print sigma2
+	#print g['Gamma']
+	#print g['A']
+	
+	OK = False
+	while not OK:
+		try:	
+			g['A_half'] = np.linalg.cholesky(g['A']) #ok
+			OK = True
+		except:
+			print str(sigma2) + " A: Not pos semidef. Adjusting diagonal"
+			g['A'] += 0.1 * np.identity(g['A'].shape[0])
+
+	g['A_half_inv'] = np.linalg.inv(g['A_half'])
+
+	OK = False
+	while not OK:
+		try:	
+			g['Gamma_half'] = np.linalg.cholesky(g['Gamma']) #ok
+			OK = True
+		except:
+			print str(sigma2) + "Gamma: Not pos semidef. Adjusting diagonal"
+			g['Gamma'] += 0.1 * np.identity(g['Gamma'].shape[0])
+
+	
+	g['Gamma_half_inv'] = np.linalg.inv(g['Gamma_half'])
+	
+	OK = False
+	while not OK:
+		try:	
+			g['K_M_half'] = np.linalg.cholesky(g['K_M']) #ok
+			OK = True
+		except:
+			print str(sigma2) + "K_M Not pos semidef. Adjusting diagonal"
+			g['K_M'] += 0.1 * np.identity(g['K_M'].shape[0])
+
+	
+	g['K_M_half_inv'] = np.linalg.inv(g['K_M_half'])
+
+	#print g['Gamma']
+	#print g['Gamma_half']
+
+	g['K_NM_bar'] = np.dot(g['Gamma_half_inv'], g['K_NM']) #ok
+	g['y_Gamma'] = g['Gamma_half_inv'].dot(y) #ok
 
 	return g
 
@@ -165,11 +241,11 @@ def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
 	v['K_NM_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'NM')
-	v['K_NM_bar_dot'] = np.dot(np.linalg.inv(g['Gamma_half']), v['K_NM_dot'])
+	v['K_NM_bar_dot'] = np.dot(g['Gamma_half_inv'], v['K_NM_dot'])
 	v['K_M_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'M')
 	
 	v['Gamma_dot'] = get_Gamma_dot(X, c, sigma2, b, g, v, varIndex)
-	v['Gamma_bar_dot'] = np.dot(np.dot(np.linalg.inv(g['Gamma_half']), v['Gamma_dot']), np.linalg.inv(g['Gamma_half']))
+	v['Gamma_bar_dot'] = np.dot(np.dot(g['Gamma_half_inv'], v['Gamma_dot']), g['Gamma_half_inv'])
 	v['A_dot'] = get_A_dot(sigma2, g, v)
 
 	return v
@@ -184,20 +260,27 @@ def get_K_NM(X, Xbar, c, b):
 def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
 	N = X.shape[0]
 	I = np.identity(N)
-	
+	detCheck = 1.0
+	#print b
+
 	Lambda = np.zeros((N,N))
 	for n in range(0, N):
 		x_n = X[n,:]
-		K_nn = kernel(x_n, x_n, c, b)
-		k_x_n = kernelMatrix(Xbar, x_n, c, b)
-		f = np.dot(k_x_n.T, K_M_inv)
-		Lambda[n][n] =  K_nn - np.dot(f, k_x_n)[0,0]
+		K_nn = kernel(x_n, x_n, c, b) #ok, always outputs c
+		k_x_n = kernelMatrix(Xbar, x_n, c, b) #ok			
+		Lambda[n][n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
 
-	return I + Lambda / sigma2
+	retMat = I + Lambda / sigma2 #ok
+	
+	for n in range(0, N):
+		#print retMat[n][n]
+		detCheck *= retMat[n][n]
 
+	#print "determinant: " + str(detCheck)
+	return retMat
 #TODO: better inversion of Gamma?
-def get_A(sigma2, K_M, K_NM, Gamma):
-	return sigma2 * K_M + np.dot(np.dot(K_NM.T, np.linalg.inv(Gamma)), K_NM)
+def get_A(sigma2, K_M, K_NM, Gamma_inv):
+	return sigma2 * K_M + np.dot(np.dot(K_NM.T, Gamma_inv), K_NM)
 
 #Returns a gradient matrix K_NM_dot or K_M_dot
 #varIndex: the index of the relevant variable in the params vector
