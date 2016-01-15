@@ -68,24 +68,6 @@ class GaussianProcess(object):
         fn = function(inputs=[], outputs=grad)
         return fn
 
-    def plain_gradient_descent(self,maxiters =1000, step=0.01):
-        gf = self.grad()
-        L = self.getL()
-        costs = []
-        iters = 0
-        prevcost = np.infty
-        currcost = L(self.xtrain,self.xtrain)[0]
-        costs.append(currcost)
-        while iters<maxiters:
-            updates = gf(self.xtrain,self.xtrain)
-            costs.append(L(self.xtrain,self.xtrain)[0])
-            for update,param in zip(updates,self.params):
-            	param.set_value(np.float64(param.get_value()-step * np.clip(update,-0.1,0.1)))
-            iters+=1
-            prevcost = costs[iters-1]
-            currcost = costs[iters]
-        return costs
-
     def train_numpy_cost_grads(self, method = "L-BFGS-B"):
         cost = self.getL()
         g = self.grad()
@@ -149,9 +131,11 @@ class SparseGaussianProcess(GaussianProcess):
 		self.params = [self.b,self.c,self.sigma, self.pseudo_points]
 
 	def log_likelihood(self):
-		Lambda =T.diag(self.Knn) 
-	 	gamma = T.power(self.sigma,-2.)*Lambda +T.eye(self.N)
-		gammainv = self.inverter(gamma)
+#		Lambda =T.diag(self.Knn)
+#	 	gamma = T.power(self.sigma,-2.)*Lambda +T.eye(self.N)
+#		gammainv = self.inverter(gamma)
+		gamma = (T.power(self.sigma,-2.)*self.c + 1)*T.eye(self.N)
+		gammainv = (T.power(self.sigma,2.)*T.power(self.c,-1.)+1)*T.eye(self.N)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Knm);
 	 	psi1 = T.log(self.det(A)) + T.log(self.det(gamma))-T.log(self.det(self.Kmm))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
 	 	Ainv = self.inverter(A)
@@ -188,8 +172,8 @@ class SparseGaussianProcess(GaussianProcess):
 
 	def getPosteriorPredictive(self):
 		pred_x = T.dmatrix("pred_x")
-		gamma = T.diag(self.Knn) + T.power(self.sigma,2.)*T.eye(self.N)
-		gammainv = self.inverter(gamma)
+		gamma = (self.c+ T.power(self.sigma,2.))*T.eye(self.N)
+		gammainv = (T.power(self.c,-1.)*np.ones((self.N,1))+ T.power(self.sigma,-2.))*T.eye(self.N)
 		K_star_star = get_exp(pred_x,pred_x,self.D,self.b,self.c)
 		K_star_m = get_exp(pred_x,self.pseudo_points,self.D,self.b,self.c)
 		K_x_xp =  self.Kmn
