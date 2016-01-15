@@ -21,7 +21,7 @@ class ARDKernel(object):
         self.Xp = T.dmatrix('Xp')
         scaledX = T.sqrt(self.b)*self.X
         scaledXp = T.sqrt(self.b)*self.Xp
-        squared_euclidean_distances = (scaledX ** 2).sum(1).reshape((scaledX.shape[0], 1)) + (scaledXp ** 2).sum(1).reshape((1, scaledXp.shape[0])) - 2 * scaledX.dot(scaledXp.T)
+        squared_euclidean_distances = (T.power(scaledX, 2.)).sum(1).reshape((scaledX.shape[0], 1)) + (T.power(scaledXp, 2.)).sum(1).reshape((1, scaledXp.shape[0])) - 2.* scaledX.dot(scaledXp.T)
         xp = 0.5*squared_euclidean_distances
         self.exp = self.c*T.exp(-xp)
         self.C = function(inputs=[self.X, self.Xp], outputs=[self.exp])
@@ -31,6 +31,7 @@ class ARDKernel(object):
 def get_exp(X,Xp,D,b,c):
     scaledX = T.sqrt(b)*X
     scaledXp = T.sqrt(b)*Xp
-    squared_euclidean_distances = (scaledX ** 2).sum(1).reshape((scaledX.shape[0], 1)) + (scaledXp ** 2).sum(1).reshape((1, scaledXp.shape[0])) - 2 * scaledX.dot(scaledXp.T)
+    squared_euclidean_distances = (T.power(scaledX, 2.)).sum(1).reshape((scaledX.shape[0], 1)) + (T.power(scaledXp, 2.)).sum(1).reshape((1, scaledXp.shape[0])) - 2.* scaledX.dot(scaledXp.T)
     xp = 0.5*squared_euclidean_distances
     return  c*T.exp(-xp)
+
