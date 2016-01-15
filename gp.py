@@ -152,7 +152,7 @@ class SparseGaussianProcess(GaussianProcess):
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain.T
 	 	psi22 = gammainv-T.dot(T.dot(T.dot(T.dot(gammainv,self.Kmn.T), Ainv),self.Kmn),gammainv)
 	 	psi2 = T.dot(T.dot(psi21,psi22),self.ytrain)
-	 	return (psi1+psi2).flatten()[0]
+	 	return 0.5*(psi1+psi2).flatten()[0]
 
 	def log_likelihood_batch(self):
 		Kmn = get_exp(self.pseudo_points,self.xtrain_batch,self.D,self.b,self.c)
@@ -164,7 +164,7 @@ class SparseGaussianProcess(GaussianProcess):
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain_batch.T
 	 	psi22 = gammainv-T.dot(T.dot(T.dot(T.dot(gammainv,Kmn.T), Ainv),Kmn),gammainv)
 	 	psi2 = T.dot(T.dot(psi21,psi22),self.ytrain_batch)
-	 	return (psi1+psi2).flatten()[0]
+	 	return 0.5*(psi1+psi2).flatten()[0]
 
 
 
