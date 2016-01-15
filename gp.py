@@ -7,11 +7,17 @@ import numpy as np
 from scipy.optimize import minimize
 from kernels import ARDKernel, get_exp
 from theano import shared
-from keras import constraints
-from keras import optimizers
+from theano import config
+from keras import constraints,optimizers
 """
 Standard gaussian process implementation with ARD kernel. Hyperparams: sigma, c, b_1...,b_D.
 """
+
+class StrictConstraint(constraints.Constraint):
+	def __call__(self, p):
+		p *= T.cast(p > 0.0001, config.floatX)
+		return p
+
 class GaussianProcess(object):
     def __init__(self, xtrain, ytrain):
         self.xtrain = xtrain
@@ -182,7 +188,7 @@ class SparseGaussianProcess(GaussianProcess):
 			constraint = [constraints.Constraint()]
 			return constraint, [self.pseudo_points]
 		else:
-			constraint = [constraints.NonNeg() for i in [self.b,self.c,self.sigma]]
+			constraint = [StrictConstraint() for i in [self.b,self.c,self.sigma]]
 			constraint.append(constraints.Constraint())
 			return constraint, self.params
 
