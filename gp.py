@@ -152,21 +152,28 @@ class SparseGaussianProcess(GaussianProcess):
 		fn = function(inputs=[], outputs=grad)
 		return fn
 
-	def RMSprop(self,lr=0.001, rho=0.9, epsilon=1e-6): 
-		constraint = [constraints.NonNeg() for i in [self.b,self.c,self.sigma]]
-		constraint.append(constraints.Constraint())
+	def getParams(self,only_psudo = False):
+		if only_psudo:
+			constraint = [constraints.Constraint()]
+			return constraint, [self.pseudo_points]
+		else:
+			constraint = [constraints.NonNeg() for i in [self.b,self.c,self.sigma]]
+			constraint.append(constraints.Constraint())
+			return constraint, self.params
+
+	def RMSprop(self,only_psudo = False, lr=0.001, rho=0.9, epsilon=1e-6): 
+		constraints, params = self.getParams(only_psudo)
 		rmsprop = optimizers.RMSprop(lr=lr,tho=rho,epsilon=epsilon)
 		train_loss = self.log_likelihood()
-		updates = rmsprop.get_updates(self.params,constraint,train_loss)
+		updates = rmsprop.get_updates(self.params,constraints,train_loss)
 		trainf = function([],[train_loss], updates=updates)
 		return trainf
 
-	def Adam(self,lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08):
-		constraint = [constraints.NonNeg() for i in [self.b,self.c,self.sigma]]
-		constraint.append(constraints.Constraint())
+	def Adam(self,only_psudo = False, lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08):
+		constraints, params = self.getParams(only_psudo)
 		adam = optimizers.Adam(lr=lr,beta_1=beta_1,beta_2=beta_2,epsilon=epsilon)
 		train_loss = self.log_likelihood()
-		updates = adam.get_updates(self.params,constraint,train_loss)
+		updates = adam.get_updates(self.params,constraints,train_loss)
 		trainf = function([],[train_loss], updates=updates)
 		return trainf
 
