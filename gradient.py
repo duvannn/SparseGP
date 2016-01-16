@@ -15,7 +15,7 @@ class spgp():
 	xbar_limits = (None, None)
 
 	#limit is used temporarily to limit n.o training points
-	def __init__(self, limit = 300):
+	def __init__(self, limit = 30):
 		trX, trY, tX, tY = get_all_data("kin40k")
 		self.trainX = trX[:limit] if limit else trX
 		self.trainY = trY[:limit] if limit else trY
@@ -24,7 +24,7 @@ class spgp():
 		self.N, self.D = self.trainX.shape #Get dataset dimensions
 
 	#Train SPGP
-	def train(self, M = 10):
+	def train(self, M = 2):
 		self.M = M
 		params0 = self.get_initial_params_guess()
 		bounds = [self.c_limit] + [self.sigma2_limit] + [self.b_limits] * self.D + [self.xbar_limits] * self.M * self.D
@@ -34,12 +34,29 @@ class spgp():
 								method = 'L-BFGS-B',
 								jac = gradient, 
 								bounds = bounds)
-		c, sigma2, b, Xbar = unpack_variables(results.x, self.D, self.M)
-		print c
-		print sigma2
-		print b
-		print Xbar
+		self.c, self.sigma2, self.b, self.Xbar = unpack_variables(results.x, self.D, self.M)
 
+	#Return average of (prediction_mean_i - test_output_i)^2 for all test examples i
+	#Prediction uses the mean of the predictive distribution p(y_star|x_star, y, X, Xbar)
+	def evaluateTestError(self):
+		g = generalGradientVars(self.trainX, self.Xbar, self.trainY, self.sigma2, self.c, self.b, self.M, True)
+		LambdaAndSigma2_inv = np.linalg.inv(g['Gamma'] * self.sigma2)
+		Q_M = g['K_M'] + np.dot(g['K_NM'].T, np.dot(LambdaAndSigma2_inv, g['K_NM']))
+		Q_M_inv = np.linalg.inv(Q_M)
+		predMatrix = np.dot(Q_M_inv, np.dot(g['K_NM'].T, np.dot(LambdaAndSigma2_inv, self.trainY)))
+
+		#Get prediction of each test input
+		sqTestErrorSum = 0.0
+		for i, x_star in enumerate(self.testX):
+			k_star = get_k_star(x_star, self.Xbar, self.c, self.b)
+			mu_star = np.dot(k_star.T, predMatrix)
+			sqTestError = (mu_star - self.testY[i]) ** 2
+			sqTestErrorSum += sqTestError
+
+			if i % 1000 == 0:
+				print str(i) + " predictions completed. Average error: " + str(sqTestErrorSum / (i + 1))
+			
+		return sqTestErrorSum / len(self.testX)
 
 	#Initial guess of pseudo inputs is random subset of training inputs
 	def get_initial_params_guess(self):
@@ -164,7 +181,7 @@ def phiDot_2(sigma2, g, v):
 #Calculations of matrices and vectors used by gradients in a dict
 #General: used by all gradients
 #also used in calculation of loglikelihood, but we don't need to include all calculations.
-def generalGradientVars(X, Xbar, y, sigma2, c, b, M, loglikelihoodCalcs = False):
+def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g = {}
 
 	g['K_M'] = get_K_M(Xbar, c, b)
@@ -176,7 +193,7 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, loglikelihoodCalcs = False)
 	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma_inv']) 
 	g['A_inv'] = np.linalg.inv(g['A'])
 
-	if loglikelihoodCalcs: return g
+	if limitCalcs: return g
 	
 	g['A_half'] = np.linalg.cholesky(g['A'])
 	g['A_half_inv'] = np.linalg.inv(g['A_half'])
@@ -312,4 +329,7 @@ def get_k_n(g, n):
 def get_A_dot(sigma2, g, v):
 	A_dot = sigma2 * v['K_M_dot'] + np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])
 	return A_dot + (np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])).T - np.dot(np.dot(g['K_NM_bar'].T, v['Gamma_bar_dot']), g['K_NM_bar'])
-	
+
+#Used for the predictive distribution
+def get_k_star(x_star, Xbar, c, b):
+	return kernelMatrix(Xbar, x_star, c, b)
