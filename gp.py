@@ -24,9 +24,9 @@ class GaussianProcess(object):
         self.ytrain = ytrain
         self.N = self.xtrain.shape[0]
         self.D = self.xtrain.shape[1]
-        self.b = shared(np.ones(self.D),"b")
+        self.b = shared(np.ones(self.D).astype(config.floatX),"b")
         self.c = shared(1.0,"c")
-        self.sigma = shared(np.float64(1.),"sigma")
+        self.sigma = shared(1.0,"sigma")
         self.kernel = ARDKernel(self.D,b = self.b,c=self.c)
         self.det = T.nlinalg.Det()
         self.inverter = T.nlinalg.MatrixInverse()
@@ -81,16 +81,16 @@ class GaussianProcess(object):
             b = x[:self.D]
             c = x[self.D]
             sigma = x[self.D+1]
-            self.b.set_value(np.float64(b),borrow=True)
-            self.c.set_value(np.float64(c),borrow=True)
-            self.sigma.set_value(np.float64(sigma),borrow=True)
+            self.b.set_value(config.floatX(b),borrow=True)
+            self.c.set_value(config.floatX(c),borrow=True)
+            self.sigma.set_value(config.floatX(sigma),borrow=True)
             c = cost(self.xtrain,self.xtrain)
             grads = g(self.xtrain,self.xtrain)
             gr = list(grads[0])
             gr.append(np.array(grads[1]))
             gr.append(np.array(grads[2]))
-            c = np.float64(c)
-            gr = np.float64(gr)
+            c = config.floatX(c)
+            gr = config.floatX(gr)
             return c,gr
         x = np.random.random(self.D+2)
         weights = minimize(train_fn,x,
@@ -100,9 +100,9 @@ class GaussianProcess(object):
         b = x[:self.D]
         c = x[self.D]
         sigma = x[self.D+1]
-        self.b.set_value(np.float64(b),borrow=True)
-        self.c.set_value(np.float64(c),borrow=True)
-        self.sigma.set_value(np.float64(sigma),borrow=True)
+        self.b.set_value(config.floatX(b),borrow=True)
+        self.c.set_value(config.floatX(c),borrow=True)
+        self.sigma.set_value(config.floatX(sigma),borrow=True)
         return weights
 
     def Adam(self,lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08):
@@ -129,12 +129,12 @@ class SparseGaussianProcess(GaussianProcess):
 	def __init__(self,xtrain,ytrain,M):
 		GaussianProcess.__init__(self,xtrain,ytrain)
 		self.M = M
-		self.pseudo_points = shared(self.xtrain[:self.M,:],"pseudo_inputs")
+		self.pseudo_points = shared(self.xtrain[:self.M,:].astype(config.floatX),"pseudo_inputs")
 		self.Kmm = get_exp(self.pseudo_points,self.pseudo_points,self.D,self.b,self.c)
 		self.Kmn = get_exp(self.pseudo_points,self.xtrain,self.D,self.b,self.c)
 		self.params = [self.b,self.c,self.sigma, self.pseudo_points]
-		self.xtrain_batch = T.dmatrix("xtrain batch")
-		self.ytrain_batch = T.dmatrix("ytrain batch")
+		self.xtrain_batch = T.matrix("xtrain batch")
+		self.ytrain_batch = T.matrix("ytrain batch")
 
 	# def log_likelihood(self):
 	# 	lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))

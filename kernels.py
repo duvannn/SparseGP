@@ -10,15 +10,15 @@ ARD kernel, hyperparameters:c, b_1 .. b_D
 class ARDKernel(object):
     def __init__(self,D,b = None,c = None):
     	if(b==None):
-    		self.b = shared(np.ones(D).astype(np.float64),"b")
+    		self.b = shared(np.ones(D).astype(config.floatX),"b")
     	else:
     		self.b = b
     	if(c==None):
-        	self.c = shared(np.float64(1.),"c")
+        	self.c = shared(1.,"c")
         else:
         	self.c = c
-        self.X = T.dmatrix('X')
-        self.Xp = T.dmatrix('Xp')
+        self.X = T.matrix('X')
+        self.Xp = T.matrix('Xp')
         scaledX = T.sqrt(self.b)*self.X
         scaledXp = T.sqrt(self.b)*self.Xp
         squared_euclidean_distances = (T.power(scaledX, 2.)).sum(1).reshape((scaledX.shape[0], 1)) + (T.power(scaledXp, 2.)).sum(1).reshape((1, scaledXp.shape[0])) - 2.* scaledX.dot(scaledXp.T)
