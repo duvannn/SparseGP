@@ -15,7 +15,7 @@ Standard gaussian process implementation with ARD kernel. Hyperparams: sigma, c,
 
 class StrictConstraint(constraints.Constraint):
 	def __call__(self, p):
-		p *= T.cast(p > 0.0001, config.floatX)
+		p = T.clip(p,0.0001,10e20)
 		return p
 
 class GaussianProcess(object):
@@ -136,24 +136,32 @@ class SparseGaussianProcess(GaussianProcess):
 		self.xtrain_batch = T.matrix("xtrain batch")
 		self.ytrain_batch = T.matrix("ytrain batch")
 
-	# def log_likelihood(self):
-	# 	lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
-	# 	gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
-	# 	gammainv = self.inverter(gamma)
-	#  	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
-	#  	A_sholesky = T.slinalg.cholesky(A)
-	#  	psi1 = T.log(T._tensor_py_operators.prod(T.diag(A_sholesky)) ) + T.log(self.det(gamma))-T.log(self.det(self.Kmm))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
-	#  	y_gamma = T.dot(T.sqrt(gammainv),self.ytrain)
-	#  	psi2 = T.dot(T.dot(T.dot(self.inverter(A_sholesky),self.Kmn),T.sqrt(gammainv)),y_gamma)
-	#  	psi2 = T.power(self.sigma,-2.)*(T._tensor_py_operators.norm(y_gamma,2.)-T._tensor_py_operators.norm(psi2,2.))
-	#  	return (psi1+psi2).flatten()[0]
+	def log_likelihood_cholesky(self):
+		lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
+		gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
+		gamma = T.clip(gamma,0.0001,10**9)
+		gammainv = self.inverter(gamma)
+		gammainv = T.clip(gammainv,0.0,10**9)
+	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
+	 	A = T.clip(A,-10**9,10**9)
+	 	A_sholesky = T.slinalg.cholesky(A)
+	 	A_sholesky = T.clip(A_sholesky,-10**6,10**6)
+		psi1 = T.log(T.clip(T._tensor_py_operators.prod(T.diag(A_sholesky)),0.0001,10**9)) + T.log(T.clip(self.det(gamma),0.0001,10**9))-T.log(T.clip(self.det(self.Kmm),0.001,10**9))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
+	 	y_gamma = T.dot(T.sqrt(T.clip(gammainv,0.0,10**9)),self.ytrain)
+	 	psi2 = T.dot(T.dot(T.dot(self.inverter(A_sholesky),self.Kmn),T.sqrt(gammainv)),y_gamma)
+	 	psi2 = T.power(self.sigma,-2.)*(T.power(T._tensor_py_operators.norm(y_gamma,1),2.)-T.power(T._tensor_py_operators.norm(psi2,1),2.))
+	 	return 0.5*(psi1+psi2).flatten()[0]
 
 	def log_likelihood(self):
 	 	lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
 	 	gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
-	 	gammainv = self.inverter(gamma)
+	 	gamma = T.clip(gamma,0.0001,10e20)
+	 	gammainv = T.clip(self.inverter(gamma),0.00001,1e20)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
-	 	psi1 = T.log(self.det(A)) + T.log(self.det(gamma))-T.log(self.det(self.Kmm))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
+	 	detA = self.det(A)#T.clip(T.abs_(self.det(A)),0.1,1e20)
+	 	detgamma = self.det(gamma)#T.clip(self.det(gamma),0.1,1e20)
+	 	detkmm = self.det(self.Kmm)#T.clip(self.det(self.Kmm),0.1,1e20)
+	 	psi1 = T.log(detA) + T.log(detgamma)-T.log(detkmm)+(self.N-self.M)*T.log(T.power(self.sigma,2.))
 	 	Ainv = self.inverter(A)
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain.T
 	 	psi22 = gammainv-T.dot(T.dot(T.dot(T.dot(gammainv,self.Kmn.T), Ainv),self.Kmn),gammainv)
@@ -190,7 +198,7 @@ class SparseGaussianProcess(GaussianProcess):
 		else:
 			constraint = [StrictConstraint() for i in [self.b,self.c,self.sigma]]
 			constraint.append(constraints.Constraint())
-			return constraint, self.params
+			return constraint, [self.b,self.c,self.sigma,self.pseudo_points]
 
 	def RMSprop(self,batch_training=False, only_psudo = False, lr=0.001, rho=0.9, epsilon=1e-6): 
 		constraints, params = self.getParams(only_psudo)
