@@ -6,17 +6,47 @@ import random
 from utils import *
 from sys import argv
 
+class testRunner():
+
+	dataset = "kin40k" #"kin40k" or "pumadyn32nm"
+	pseudopoints = [2, 10, 20, 40, 400]
+	trainingsetLimits = [30, 100, 200, None, None]
+
+	def run(self):
+		for i, ppoints in enumerate(self.pseudopoints):
+			notCleared = True
+			while notCleared:
+				try:
+					print "Dataset: " + self.dataset + ", pseudo points: " + str(ppoints) + ", training set size limit: " + str(self.trainingsetLimits[i])  
+					s = spgp(self.trainingsetLimits[i], self.dataset)
+					s.train(ppoints)
+					print "Done Training"
+					print "c"
+					print s.c
+					print "sigma2"
+					print s.sigma2
+					print "b"
+					print s.b
+					print "Xbar"
+					print s.Xbar
+					testError = s.evaluateTestError()
+					print "test error: " + str(testError)
+					notCleared = False
+				
+				except:
+					notCleared = True
+
 #params structure [c, sigma^2, b_1,...,b_D, xbar_1^1,...,xbar_1^D, ..., xbar_M^1,...,xbar_M^D]
 class spgp():
 
-	c_limit = (0, None)
+	c_limit = (0.0000000000001, None)
 	sigma2_limit = (0.0000000000001, None)
 	b_limits = (0.0000000000001, None)
 	xbar_limits = (None, None)
 
 	#limit is used temporarily to limit n.o training points
-	def __init__(self, limit = 30):
-		trX, trY, tX, tY = get_all_data("kin40k")
+	def __init__(self, limit = 30, dataset = "kin40k"):
+		trX, trY, tX, tY = get_all_data(dataset)
 		self.trainX = trX[:limit] if limit else trX
 		self.trainY = trY[:limit] if limit else trY
 		self.testX = tX
@@ -40,10 +70,10 @@ class spgp():
 	#Prediction uses the mean of the predictive distribution p(y_star|x_star, y, X, Xbar)
 	def evaluateTestError(self):
 		g = generalGradientVars(self.trainX, self.Xbar, self.trainY, self.sigma2, self.c, self.b, self.M, True)
-		LambdaAndSigma2_inv = np.linalg.inv(g['Gamma'] * self.sigma2)
-		Q_M = g['K_M'] + np.dot(g['K_NM'].T, np.dot(LambdaAndSigma2_inv, g['K_NM']))
+		LambdaAndSigma2_inv_diag = 1 / (g['Gamma_diag'] * self.sigma2)
+		Q_M = g['K_M'] + np.dot(g['K_NM'].T, diagDotMatrix(LambdaAndSigma2_inv_diag, g['K_NM']))
 		Q_M_inv = np.linalg.inv(Q_M)
-		predMatrix = np.dot(Q_M_inv, np.dot(g['K_NM'].T, np.dot(LambdaAndSigma2_inv, self.trainY)))
+		predMatrix = np.dot(Q_M_inv, np.dot(g['K_NM'].T, diagDotMatrix(LambdaAndSigma2_inv_diag, self.trainY)))
 
 		#Get prediction of each test input
 		sqTestErrorSum = 0.0
@@ -102,15 +132,16 @@ def neg_loglikelihood(params, X, y, M):
 	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M, True)
 
 	#For Gamma, find log of the determinant to prevent float overflow issues
-	detSign, logDet = np.linalg.slogdet(g['Gamma'])
-	if detSign < 0:
-		print "Gamma's determinant was < 0!"
+	logDet = 0.0
+	for elem in g['Gamma_diag']:
+		logDet += np.log(elem)
 
 	phi_1 = math.log(np.linalg.det(g['A'])) + logDet - math.log(np.linalg.det(g['K_M'])) 
 	phi_1 += (N-M) * math.log(sigma2)
 
-	innerMatrix = g['Gamma_inv'] - np.dot(g['Gamma_inv'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, g['Gamma_inv']))))
-	phi_2 = (sigma2 ** (-1)) * np.dot(y.T, np.dot(innerMatrix, y))
+	GammaInv_y = diagDotMatrix(g['Gamma_inv_diag'], y)
+	innerMatrix = GammaInv_y - diagDotMatrix(g['Gamma_inv_diag'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, GammaInv_y))))
+	phi_2 = (sigma2 ** (-1)) * np.dot(y.T, innerMatrix)
 
 	loglikelihood = (0.5 * (phi_1 + phi_2 + N * math.log(2*math.pi)))[0,0]
 	print "loglikelihood: " + str(loglikelihood)
@@ -149,12 +180,19 @@ def gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g):
 #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients
 def gradient_wrt_sigma2(y, sigma2, g):
 	sigma2_inv = math.pow(sigma2, -1)
-	Z = np.dot(g['K_NM'], np.dot(g['A_inv'],g['K_NM'].T)) #auxiliery 
-	U = y.T.dot(g['Gamma_inv'].dot(Z.dot(np.power(g['Gamma_inv'],2).dot(y)))) #auxiliery 
-	
-	phi_1 = sigma2_inv * np.trace(g['Gamma_inv']) - sigma2_inv * np.trace(np.dot(g['Gamma_inv'],np.dot(Z,g['Gamma_inv'])))
-	#phi_2 = -(sigma2_inv**2)*(np.linalg.norm(np.dot(g['Gamma_inv'],y))**2 + np.linalg.norm(g['Gamma_inv'].dot(np.dot(Z,np.dot(g['Gamma_inv'],y))))**2-U-U.T)
-	phi_2 = -(sigma2_inv**2) * np.linalg.norm(np.dot(g['Gamma_inv'] - np.dot(g['Gamma_inv'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, g['Gamma_inv'])))), y))**2
+
+	#phi_1
+	term_1 = sigma2_inv * g['Gamma_inv_diag'].sum()
+	componentMatrix1 = diagDotMatrix(g['Gamma_inv_diag'], np.dot(g['K_NM'], g['A_inv'])) # NxM
+	componentMatrix2 = matrixDotDiag(g['K_NM'].T, g['Gamma_inv_diag']) # MxN
+	term_2 = -sigma2_inv * np.trace(np.dot(componentMatrix1, componentMatrix2)) # Might need to do manual (NxN too large?)
+	phi_1 = term_1 + term_2
+
+	#phi_2
+	GammaInv_y = diagDotMatrix(g['Gamma_inv_diag'], y)
+	term_2 = diagDotMatrix(g['Gamma_inv_diag'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, GammaInv_y))))
+	phi_2 = -(sigma2_inv**2) * (np.linalg.norm(GammaInv_y - term_2) ** 2)
+
 	return 0.5 * phi_1 + 0.5 * phi_2
 
 def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
@@ -167,13 +205,12 @@ def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
 #assuming that in derivations A^(T/2) means A^(1/2).T
 def phiDot_1(g, v):
 	A_term = g['A_half_inv'].dot(v['A_dot'].dot(g['A_half_inv'].T)) 
-	Gamma_term = v['Gamma_bar_dot']
 	K_term = g['K_M_half_inv'].dot(v['K_M_dot'].dot(g['K_M_half_inv'].T))
-	return np.trace(A_term) + np.trace(Gamma_term) - np.trace(K_term)
+	return np.trace(A_term) + v['Gamma_bar_dot_diag'].sum() - np.trace(K_term)
 
 def phiDot_2(sigma2, g, v):
-	Term1 = - g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['y_Gamma']))
-	Term2 = 2 * g['y_Gamma'].T.dot(v['Gamma_bar_dot'].dot(g['K_NM_bar'].dot(g['A_inv'].dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
+	Term1 = - np.dot(g['y_Gamma'].T, diagDotMatrix(v['Gamma_bar_dot_diag'], g['y_Gamma']))
+	Term2 = 2 * g['y_Gamma'].T.dot(diagDotMatrix(v['Gamma_bar_dot_diag'], g['K_NM_bar'].dot(g['A_inv'].dot(g['K_NM_bar'].T.dot(g['y_Gamma'])))))
 	Term3 = -2 * g['y_Gamma'].T.dot(g['K_NM_bar'].dot(g['A_inv'].dot(v['K_NM_bar_dot'].T.dot(g['y_Gamma']))))
 	Term4 = g['y_Gamma'].T.dot(g['K_NM_bar'].dot(g['A_inv'].dot(v['A_dot'].dot(g['A_inv'].dot(g['K_NM_bar'].T.dot(g['y_Gamma']))))))
 	return sigma2**(-1) * (Term1 + Term2 + Term3 + Term4)
@@ -188,22 +225,25 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g['K_M_inv'] = np.linalg.inv(g['K_M'])
 	g['K_NM'] = get_K_NM(X, Xbar, c, b)
 
-	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], g['K_NM'], c, b)
-	g['Gamma_inv'] = np.linalg.inv(g['Gamma'])
-	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma_inv']) 
+	g['Gamma_diag'] = get_Gamma_diag(sigma2, X, Xbar, g['K_M_inv'], c, b)
+	g['Gamma_inv_diag'] = 1 / g['Gamma_diag'] 
+
+	g['A'] = get_A(sigma2, g) 
 	g['A_inv'] = np.linalg.inv(g['A'])
 
 	if limitCalcs: return g
 	
 	g['A_half'] = np.linalg.cholesky(g['A'])
 	g['A_half_inv'] = np.linalg.inv(g['A_half'])
-	g['Gamma_half'] = np.linalg.cholesky(g['Gamma'])
-	g['Gamma_half_inv'] = np.linalg.inv(g['Gamma_half'])
+	
+	g['Gamma_half_diag'] = np.power(g['Gamma_diag'], 0.5)
+	g['Gamma_half_inv_diag'] = 1 / g['Gamma_half_diag']
+
 	g['K_M_half'] = np.linalg.cholesky(g['K_M'])		
 	g['K_M_half_inv'] = np.linalg.inv(g['K_M_half'])
 
-	g['K_NM_bar'] = np.dot(g['Gamma_half_inv'], g['K_NM'])
-	g['y_Gamma'] = g['Gamma_half_inv'].dot(y)
+	g['K_NM_bar'] = diagDotMatrix(g['Gamma_half_inv_diag'], g['K_NM'])
+	g['y_Gamma'] = diagDotMatrix(g['Gamma_half_inv_diag'], y)
 
 	return g
 
@@ -212,11 +252,12 @@ def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
 	v['K_NM_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'NM')
-	v['K_NM_bar_dot'] = np.dot(g['Gamma_half_inv'], v['K_NM_dot'])
+	v['K_NM_bar_dot'] = diagDotMatrix(g['Gamma_half_inv_diag'], v['K_NM_dot'])
 	v['K_M_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'M')
-	
-	v['Gamma_dot'] = get_Gamma_dot(X, c, sigma2, b, g, v, varIndex)
-	v['Gamma_bar_dot'] = np.dot(np.dot(g['Gamma_half_inv'], v['Gamma_dot']), g['Gamma_half_inv'])
+
+	v['Gamma_dot_diag'] = get_Gamma_dot_diag(X, c, sigma2, b, g, v, varIndex)
+	v['Gamma_bar_dot_diag'] = g['Gamma_half_inv_diag'] * v['Gamma_dot_diag'] * g['Gamma_half_inv_diag']
+
 	v['A_dot'] = get_A_dot(sigma2, g, v)
 
 	return v
@@ -228,24 +269,8 @@ def get_K_M(Xbar, c, b):
 def get_K_NM(X, Xbar, c, b):
 	return kernelMatrix(X,Xbar,c,b)
 
-def get_Gamma(sigma2, X, Xbar, K_M_inv, K_NM, c, b):
-	N = X.shape[0]
-	I = np.identity(N)
-
-	Lambda = np.zeros((N,N))
-	#for n in range(0, N):
-	#	x_n = X[n,:]
-	#	K_nn = kernel(x_n, x_n, c, b)
-	#	k_x_n = kernelMatrix(Xbar, x_n, c, b)			
-	#	Lambda[n][n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
-	L = np.zeros((N,N))
-	np.fill_diagonal(L,np.diagonal(np.dot(np.dot(K_NM,K_M_inv),K_NM.T)))
-        Lambda = c * np.identity(N) - L
-	return I + Lambda / sigma2
-
-#TODO: better inversion of Gamma?
-def get_A(sigma2, K_M, K_NM, Gamma_inv):
-	return sigma2 * K_M + np.dot(np.dot(K_NM.T, Gamma_inv), K_NM)
+def get_A(sigma2, g):
+	return sigma2 * g['K_M'] + np.dot(matrixDotDiag(g['K_NM'].T, g['Gamma_inv_diag']), g['K_NM'])
 
 #Returns a gradient matrix K_NM_dot or K_M_dot
 #varIndex: the index of the relevant variable in the params vector
@@ -299,30 +324,6 @@ def get_K_dot(X, Xbar, c, b, g, varIndex, subscript):
 
 	return b[d] * np.multiply(diff, g[dictKey]) #elementwise multiplication
 
-#varIndex: the index of the relevant variable in the params vector
-def get_Gamma_dot(X, c, sigma2, b, g, v, varIndex):
-	N, D = X.shape
-
-	Gamma_dot = np.zeros((N,N))
-	#for n in range(0,N):
-	#	K_nn_dot = get_K_nn_dot(X, c, b, n, varIndex)
-	#	k_n_dot = get_k_n_dot(v, n)
-	#	k_n = get_k_n(g, n)
-
-	#	diagVal = K_nn_dot - 2 * np.dot(np.dot(k_n_dot.T, g['K_M_inv']), k_n)
-	#	diagVal += np.dot(np.dot(np.dot(np.dot(k_n.T, g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), k_n)
-	#	Gamma_dot[n][n] = diagVal / sigma2
-        
-        if varIndex == 0:
-                K_N_dot_diag = np.ones(N)
-        else:
-                K_N_dot_diag = np.zeros(N)
-
-        Lambda_diag = K_N_dot_diag - 2 * np.diagonal(np.dot(np.dot(v['K_NM_dot'],g['K_M_inv']),g['K_NM'].T))
-        Lambda_diag += np.diagonal(np.dot(np.dot(np.dot(np.dot(g['K_NM'], g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), g['K_NM'].T))
-        np.fill_diagonal(Gamma_dot,np.multiply(Lambda_diag,math.pow(sigma2,-1)))
-	return Gamma_dot
-
 #0 unless taking derivative wrt c
 def get_K_nn_dot(X, c, b, n, varIndex):
 	if varIndex == 0:
@@ -339,8 +340,47 @@ def get_k_n(g, n):
 
 def get_A_dot(sigma2, g, v):
 	A_dot = sigma2 * v['K_M_dot'] + np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])
-	return A_dot + (np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])).T - np.dot(np.dot(g['K_NM_bar'].T, v['Gamma_bar_dot']), g['K_NM_bar'])
+	return A_dot + (np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])).T - np.dot(matrixDotDiag(g['K_NM_bar'].T, v['Gamma_bar_dot_diag']), g['K_NM_bar'])
 
 #Used for the predictive distribution
 def get_k_star(x_star, Xbar, c, b):
 	return kernelMatrix(Xbar, x_star, c, b)
+
+#######################################################################
+#######################################################################
+#Multiply a matrix by a diag matrix with diagEntries
+def matrixDotDiag(matrix, diagEntries):
+	retMat = np.asarray(matrix) * diagEntries
+	return retMat
+
+#Multiply a diag matrix with diagEntries with matrix
+def diagDotMatrix(diagEntries, matrix):
+	retMat = np.asarray(matrix) * np.asarray(np.matrix(diagEntries).T)
+	return retMat
+
+def get_Gamma_diag(sigma2, X, Xbar, K_M_inv, c, b):
+	N = X.shape[0]
+	Lambda = np.zeros(N)
+
+	for n in range(0, N):
+		x_n = X[n,:]
+		K_nn = kernel(x_n, x_n, c, b)
+		k_x_n = kernelMatrix(Xbar, x_n, c, b)			
+		Lambda[n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
+	return 1 + Lambda / sigma2
+
+#varIndex: the index of the relevant variable in the params vector
+def get_Gamma_dot_diag(X, c, sigma2, b, g, v, varIndex):
+	N = X.shape[0]
+	Gamma_dot = np.zeros(N)
+
+	for n in range(0, N):
+		K_nn_dot = get_K_nn_dot(X, c, b, n, varIndex)
+		k_n_dot = get_k_n_dot(v, n)
+		k_n = get_k_n(g, n)
+
+		diagVal = K_nn_dot - 2 * np.dot(np.dot(k_n_dot.T, g['K_M_inv']), k_n)
+		diagVal += np.dot(np.dot(np.dot(np.dot(k_n.T, g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), k_n)
+		Gamma_dot[n] = diagVal / sigma2
+
+	return Gamma_dot
