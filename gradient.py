@@ -89,7 +89,7 @@ def neg_loglikelihood(params, X, y, M):
 	if detSign < 0:
 		print "Gamma's determinant was < 0!"
 
-	phi_1 = math.log(np.linalg.det(g['A'])) + logdet - math.log(np.linalg.det(g['K_M'])) 
+	phi_1 = math.log(np.linalg.det(g['A'])) + logDet - math.log(np.linalg.det(g['K_M'])) 
 	phi_1 += (N-M) * math.log(sigma2)
 
 	innerMatrix = g['Gamma_inv'] - np.dot(g['Gamma_inv'], np.dot(g['K_NM'], np.dot(g['A_inv'], np.dot(g['K_NM'].T, g['Gamma_inv']))))
