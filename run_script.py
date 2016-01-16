@@ -2,7 +2,6 @@ from utils import get_all_data, read_dataset, mean_square_error,generateSinData
 from gp import GaussianProcess, SparseGaussianProcess
 from kernels import ARDKernel
 import numpy as np
-import matplotlib.pyplot as plt
 from theano import tensor as T
 
 def main(iters = 1000, points = 1000,pseudos = 50):
