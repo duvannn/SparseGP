@@ -158,9 +158,9 @@ class SparseGaussianProcess(GaussianProcess):
 	 	gamma = T.clip(gamma,0.0001,10e20)
 	 	gammainv = T.clip(self.inverter(gamma),0.00001,1e20)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
-	 	detA = self.det(A)#T.clip(T.abs_(self.det(A)),0.1,1e20)
-	 	detgamma = self.det(gamma)#T.clip(self.det(gamma),0.1,1e20)
-	 	detkmm = self.det(self.Kmm)#T.clip(self.det(self.Kmm),0.1,1e20)
+	 	detA = T.clip(T.abs_(self.det(A)),0.1,1e20)
+	 	detgamma = T.clip(self.det(gamma),0.1,1e20)
+	 	detkmm = T.clip(self.det(self.Kmm),0.1,1e20)
 	 	psi1 = T.log(detA) + T.log(detgamma)-T.log(detkmm)+(self.N-self.M)*T.log(T.power(self.sigma,2.))
 	 	Ainv = self.inverter(A)
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain.T
