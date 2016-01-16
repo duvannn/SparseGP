@@ -188,7 +188,7 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g['K_M_inv'] = np.linalg.inv(g['K_M'])
 	g['K_NM'] = get_K_NM(X, Xbar, c, b)
 
-	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], c, b)
+	g['Gamma'] = get_Gamma(sigma2, X, Xbar, g['K_M_inv'], g['K_NM'], c, b)
 	g['Gamma_inv'] = np.linalg.inv(g['Gamma'])
 	g['A'] = get_A(sigma2, g['K_M'], g['K_NM'], g['Gamma_inv']) 
 	g['A_inv'] = np.linalg.inv(g['A'])
@@ -228,16 +228,19 @@ def get_K_M(Xbar, c, b):
 def get_K_NM(X, Xbar, c, b):
 	return kernelMatrix(X,Xbar,c,b)
 
-def get_Gamma(sigma2, X, Xbar, K_M_inv, c, b):
+def get_Gamma(sigma2, X, Xbar, K_M_inv, K_NM, c, b):
 	N = X.shape[0]
 	I = np.identity(N)
 
 	Lambda = np.zeros((N,N))
-	for n in range(0, N):
-		x_n = X[n,:]
-		K_nn = kernel(x_n, x_n, c, b)
-		k_x_n = kernelMatrix(Xbar, x_n, c, b)			
-		Lambda[n][n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
+	#for n in range(0, N):
+	#	x_n = X[n,:]
+	#	K_nn = kernel(x_n, x_n, c, b)
+	#	k_x_n = kernelMatrix(Xbar, x_n, c, b)			
+	#	Lambda[n][n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
+	L = np.zeros((N,N))
+	np.fill_diagonal(L,np.diagonal(np.dot(np.dot(K_NM,K_M_inv),K_NM.T)))
+        Lambda = c * np.identity(N) - L
 	return I + Lambda / sigma2
 
 #TODO: better inversion of Gamma?
@@ -301,15 +304,23 @@ def get_Gamma_dot(X, c, sigma2, b, g, v, varIndex):
 	N, D = X.shape
 
 	Gamma_dot = np.zeros((N,N))
-	for n in range(0,N):
-		K_nn_dot = get_K_nn_dot(X, c, b, n, varIndex)
-		k_n_dot = get_k_n_dot(v, n)
-		k_n = get_k_n(g, n)
+	#for n in range(0,N):
+	#	K_nn_dot = get_K_nn_dot(X, c, b, n, varIndex)
+	#	k_n_dot = get_k_n_dot(v, n)
+	#	k_n = get_k_n(g, n)
 
-		diagVal = K_nn_dot - 2 * np.dot(np.dot(k_n_dot.T, g['K_M_inv']), k_n)
-		diagVal += np.dot(np.dot(np.dot(np.dot(k_n.T, g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), k_n)
-		Gamma_dot[n][n] = diagVal / sigma2
+	#	diagVal = K_nn_dot - 2 * np.dot(np.dot(k_n_dot.T, g['K_M_inv']), k_n)
+	#	diagVal += np.dot(np.dot(np.dot(np.dot(k_n.T, g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), k_n)
+	#	Gamma_dot[n][n] = diagVal / sigma2
+        
+        if varIndex == 0:
+                K_N_dot_diag = np.ones(N)
+        else:
+                K_N_dot_diag = np.zeros(N)
 
+        Lambda_diag = K_N_dot_diag - 2 * np.diagonal(np.dot(np.dot(v['K_NM_dot'],g['K_M_inv']),g['K_NM'].T))
+        Lambda_diag += np.diagonal(np.dot(np.dot(np.dot(np.dot(g['K_NM'], g['K_M_inv']), v['K_M_dot']), g['K_M_inv']), g['K_NM'].T))
+        np.fill_diagonal(Gamma_dot,np.multiply(Lambda_diag,math.pow(sigma2,-1)))
 	return Gamma_dot
 
 #0 unless taking derivative wrt c
