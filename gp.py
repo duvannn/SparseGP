@@ -25,8 +25,8 @@ class GaussianProcess(object):
         self.N = self.xtrain.shape[0]
         self.D = self.xtrain.shape[1]
         self.b = shared(np.ones(self.D).astype(config.floatX),"b")
-        self.c = shared(numpy.asarray(1., dtype=theano.config.floatX),"c")
-        self.sigma = shared(numpy.asarray(1., dtype=theano.config.floatX),"sigma")
+        self.c = shared(np.asarray(1., dtype=theano.config.floatX),"c")
+        self.sigma = shared(np.asarray(1., dtype=theano.config.floatX),"sigma")
         self.kernel = ARDKernel(self.D,b = self.b,c=self.c)
         self.det = T.nlinalg.Det()
         self.inverter = T.nlinalg.MatrixInverse()

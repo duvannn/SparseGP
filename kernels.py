@@ -14,7 +14,7 @@ class ARDKernel(object):
     	else:
     		self.b = b
     	if(c==None):
-        	self.c = shared(numpy.asarray(1., dtype=theano.config.floatX),"c")
+        	self.c = shared(np.asarray(1., dtype=theano.config.floatX),"c")
         else:
         	self.c = c
         self.X = T.matrix('X')
