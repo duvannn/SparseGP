@@ -25,8 +25,8 @@ class GaussianProcess(object):
         self.N = self.xtrain.shape[0]
         self.D = self.xtrain.shape[1]
         self.b = shared(np.random.random(self.D).astype(config.floatX),"b")
-        self.c = shared(np.asarray(np.random.randn()+1, dtype=config.floatX),"c")
-        self.sigma = shared(np.asarray(np.random.randn()+1, dtype=config.floatX),"sigma")
+        self.c = shared(np.asarray(0.5, dtype=config.floatX),"c")
+        self.sigma = shared(np.asarray(0.5, dtype=config.floatX),"sigma")
         self.kernel = ARDKernel(self.D,b = self.b,c=self.c)
         self.det = T.nlinalg.Det()
         self.inverter = T.nlinalg.MatrixInverse()
@@ -159,12 +159,13 @@ class SparseGaussianProcess(GaussianProcess):
 	 	lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
 	 	gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
 	 	gamma = T.clip(gamma,0.0,10e20)
-	 	gammainv = T.clip(self.inverter(gamma),0.0,1e20)#self.inverter(gamma)
+	 	gammainv = self.inverter(gamma)#T.clip(self.inverter(gamma),0.0,1e20)#self.inverter(gamma)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
-	 	detA = self.det(A)#T.clip(self.det(A),0.1,1e20)
-	 	detgamma = self.det(gamma)#T.clip(self.det(gamma),0.1,1e20)
-	 	detkmm = self.det(self.Kmm)#T.clip(self.det(self.Kmm),0.1,1e20)
+	 	detA = T.clip(self.det(A),1,1e20)#self.det(A)#
+	 	detgamma = T.clip(self.det(gamma),1,1e20)#self.det(gamma)
+	 	detkmm = T.clip(self.det(self.Kmm),1,1e20)#self.det(self.Kmm)#
 	 	psi1 = T.log(detA) + T.log(detgamma)-T.log(detkmm)+(self.N-self.M)*T.log(T.power(self.sigma,2.))
+	 	A = T.clip(A,0.0,1e20)
 	 	Ainv = self.inverter(A)
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain.T
 	 	psi22 = gammainv-T.dot(T.dot(T.dot(T.dot(gammainv,self.Kmn.T), Ainv),self.Kmn),gammainv)

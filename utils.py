@@ -46,8 +46,9 @@ def mean_square_error(pred_y, y):
 def generateSinData(samples):
 	domain = np.linspace(-2*np.pi, 2*np.pi, samples)
 	X = np.matrix([[point,np.random.randn(1)] for point in domain])
-	epsilon = 0.5* np.random.randn(samples)
+	epsilon = 0.1* np.random.randn(samples)
 	Y = np.sin(X[:,0].T)+epsilon
 	X, Y = np.array(X),np.array(Y).T
 
 	return X,Y
+
