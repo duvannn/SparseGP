@@ -24,9 +24,9 @@ class GaussianProcess(object):
         self.ytrain = ytrain
         self.N = self.xtrain.shape[0]
         self.D = self.xtrain.shape[1]
-        self.b = shared(np.ones(self.D).astype(config.floatX),"b")
-        self.c = shared(np.asarray(1., dtype=config.floatX),"c")
-        self.sigma = shared(np.asarray(1., dtype=config.floatX),"sigma")
+        self.b = shared(np.random.random(self.D).astype(config.floatX),"b")
+        self.c = shared(np.asarray(np.random.randn()+1, dtype=config.floatX),"c")
+        self.sigma = shared(np.asarray(np.random.randn()+1, dtype=config.floatX),"sigma")
         self.kernel = ARDKernel(self.D,b = self.b,c=self.c)
         self.det = T.nlinalg.Det()
         self.inverter = T.nlinalg.MatrixInverse()
@@ -129,7 +129,10 @@ class SparseGaussianProcess(GaussianProcess):
 	def __init__(self,xtrain,ytrain,M):
 		GaussianProcess.__init__(self,xtrain,ytrain)
 		self.M = M
-		self.pseudo_points = shared(self.xtrain[:self.M,:].astype(config.floatX),"pseudo_inputs")
+		indices = np.arange(xtrain.shape[0])
+		np.random.shuffle(indices)
+		mpoints = indices[:M]
+		self.pseudo_points = shared(self.xtrain[mpoints,:].astype(config.floatX),"pseudo_inputs")
 		self.Kmm = get_exp(self.pseudo_points,self.pseudo_points,self.D,self.b,self.c)
 		self.Kmn = get_exp(self.pseudo_points,self.xtrain,self.D,self.b,self.c)
 		self.params = [self.b,self.c,self.sigma, self.pseudo_points]
@@ -139,14 +142,14 @@ class SparseGaussianProcess(GaussianProcess):
 	def log_likelihood_cholesky(self):
 		lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
 		gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
-		gamma = T.clip(gamma,0.0001,10**9)
+		gamma = T.clip(gamma,0.0,10**9)
 		gammainv = self.inverter(gamma)
 		gammainv = T.clip(gammainv,0.0,10**9)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
 	 	A = T.clip(A,-10**9,10**9)
 	 	A_sholesky = T.slinalg.cholesky(A)
 	 	A_sholesky = T.clip(A_sholesky,-10**6,10**6)
-		psi1 = T.log(T.clip(T._tensor_py_operators.prod(T.diag(A_sholesky)),0.0001,10**9)) + T.log(T.clip(self.det(gamma),0.0001,10**9))-T.log(T.clip(self.det(self.Kmm),0.001,10**9))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
+		psi1 = T.log(T.clip(T._tensor_py_operators.prod(T.diag(A_sholesky)),0.0,10**9)) + T.log(T.clip(self.det(gamma),0.0,10**9))-T.log(T.clip(self.det(self.Kmm),0.0,10**9))+(self.N-self.M)*T.log(T.power(self.sigma,2.))
 	 	y_gamma = T.dot(T.sqrt(T.clip(gammainv,0.0,10**9)),self.ytrain)
 	 	psi2 = T.dot(T.dot(T.dot(self.inverter(A_sholesky),self.Kmn),T.sqrt(gammainv)),y_gamma)
 	 	psi2 = T.power(self.sigma,-2.)*(T.power(T._tensor_py_operators.norm(y_gamma,1),2.)-T.power(T._tensor_py_operators.norm(psi2,1),2.))
@@ -155,12 +158,12 @@ class SparseGaussianProcess(GaussianProcess):
 	def log_likelihood(self):
 	 	lamda = T.diag(T.diag(self.c*T.eye(self.N) - T.dot(T.dot(self.Kmn.T,self.inverter(self.Kmm)),self.Kmn)))
 	 	gamma = T.power(self.sigma,-2.)*lamda + T.eye(self.N)
-	 	gamma = T.clip(gamma,0.0001,10e20)
-	 	gammainv = T.clip(self.inverter(gamma),0.00001,1e20)
+	 	gamma = T.clip(gamma,0.0,10e20)
+	 	gammainv = T.clip(self.inverter(gamma),0.0,1e20)#self.inverter(gamma)
 	 	A = T.power(self.sigma,2.)*self.Kmm + T.dot(T.dot(self.Kmn,gammainv),self.Kmn.T);
-	 	detA = T.clip(T.abs_(self.det(A)),0.1,1e20)
-	 	detgamma = T.clip(self.det(gamma),0.1,1e20)
-	 	detkmm = T.clip(self.det(self.Kmm),0.1,1e20)
+	 	detA = self.det(A)#T.clip(self.det(A),0.1,1e20)
+	 	detgamma = self.det(gamma)#T.clip(self.det(gamma),0.1,1e20)
+	 	detkmm = self.det(self.Kmm)#T.clip(self.det(self.Kmm),0.1,1e20)
 	 	psi1 = T.log(detA) + T.log(detgamma)-T.log(detkmm)+(self.N-self.M)*T.log(T.power(self.sigma,2.))
 	 	Ainv = self.inverter(A)
 	 	psi21 = T.power(1./self.sigma,2.)*self.ytrain.T
