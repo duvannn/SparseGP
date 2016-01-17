@@ -9,8 +9,8 @@ from sys import argv
 class testRunner():
 
 	dataset = "kin40k" #"kin40k" or "pumadyn32nm"
-	pseudopoints = [2, 10, 20, 40, 400]
-	trainingsetLimits = [30, 100, 200, None, None]
+	pseudopoints = [50, 75, 100]
+	trainingsetLimits = [1000, 1000, 1000]
 
 	def run(self):
 		for i, ppoints in enumerate(self.pseudopoints):
@@ -132,11 +132,15 @@ def neg_loglikelihood(params, X, y, M):
 	g = generalGradientVars(X, Xbar, y, sigma2, c, b, M, True)
 
 	#For Gamma, find log of the determinant to prevent float overflow issues
-	logDet = 0.0
-	for elem in g['Gamma_diag']:
-		logDet += np.log(elem)
+	#Memory issues on full dataset only, on smaller subsets we can use slogdet.
+	#GlogDet = 0.0
+	#for elem in g['Gamma_diag']:
+	#	GlogDet += np.log(elem)
+	Gs, GlogDet = np.linalg.slogdet(np.diag(g['Gamma_diag']))
+	As, AlogDet = np.linalg.slogdet(g['A'])
+	K_Ms, K_MlogDet = np.linalg.slogdet(g['K_M'])
 
-	phi_1 = math.log(np.linalg.det(g['A'])) + logDet - math.log(np.linalg.det(g['K_M'])) 
+	phi_1 = AlogDet + GlogDet - K_MlogDet 
 	phi_1 += (N-M) * math.log(sigma2)
 
 	GammaInv_y = diagDotMatrix(g['Gamma_inv_diag'], y)
