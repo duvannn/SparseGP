@@ -60,7 +60,8 @@ class GaussianProcess(object):
     	Knn = get_exp(self.xtrain,self.xtrain,self.D,self.b,self.c)
         c = Knn+ T.pow(self.sigma,2.0) * T.eye(self.N)
         cinv = self.inverter(c)
-        t1 = 0.5*T.log(self.det(c))
+        detc = T.clip(self.det(c),1,1e20)
+        t1 = 0.5*T.log(detc)
         t2 = 0.5*T.dot(T.dot(self.ytrain.T,cinv),self.ytrain)
         t3 = 0.5*self.N*T.log(2.0*np.pi);
         tot = t1+t2+t3
