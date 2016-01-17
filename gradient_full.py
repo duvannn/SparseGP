@@ -30,11 +30,13 @@ def loglikelihood(x):
 	K_N = kernelMatrix(trainX, trainX, c, b)
 	term = sigma*np.eye(N) + K_N
 	inv_term = np.linalg.inv(term)
+
 	sign, L_1 = np.linalg.slogdet(term)
 	L_2 = np.dot(np.dot(np.transpose(trainY), inv_term), trainY).item(0)
-	print 0.5 * (L_1 + L_2 + log(2*pi)) 
-	return 0.5 * (L_1 + L_2 + log(2*pi))
 
+	logLik = 0.5 * (L_1 + L_2 + N * log(2*pi))
+	print logLik
+	return logLik
 
 def params(x0):
 	# extracts the params and stores them into individual variables
@@ -46,7 +48,7 @@ def params(x0):
 	# extract c
 	c = x0[1]
 	# extract b
-	b = x0[2:D+2]
+	b = x0[2:]
 	return sigma, c, b
 
 def pack_params(sigma, c, b):
@@ -54,34 +56,37 @@ def pack_params(sigma, c, b):
 	temp_arr = np.array([sigma, c])
 	return np.concatenate([temp_arr, b])
 
-def kdot_wrt_b(X_d,X_dprime, K_N):
+def kdot_wrt_b(X_d, K_N):
 	# derivative of K_N wrt to b_d
-	K_bdot = np.power(X_d - X_dprime.reshape(1,N), 2)
-	return -0.5*(np.dot(K_bdot, K_N))
+	numerator = np.power(X_d - X_d.reshape(1, X_d.shape[0]), 2)
+	return -0.5 * np.multiply(numerator, K_N)
 
 def grad_b(Xtrain, K_N, inv_term):
 	# calculates the gradient wrt b
 	b_arr = []
 	for i in range(D):
-		X_d = Xtrain[:,i]
 		# compute derivative of K_N wrt to b_d
-		K_dot = kdot_wrt_b(X_d, X_d, K_N)
+		X_d = Xtrain[:,i]
+		K_dot = kdot_wrt_b(X_d, K_N)
+
 		L_1 = np.trace( np.dot(inv_term, K_dot))
-		L_2 = - np. dot ( np.dot(trainY.T, np.dot( np.dot(inv_term, K_dot), inv_term)), trainY)
+		L_2 = - np.dot( np.dot(trainY.T, np.dot( np.dot(inv_term, K_dot), inv_term)), trainY)
 		b_arr.append( 0.5*(L_1 + L_2).item(0))
+
 	return np.array(b_arr)
 
 def grad_c(c,K_N, inv_term):
 	# calculates the gradient wrt to c
 	K_dot = (1/c)*K_N
 	L_1 = np.trace( np.dot(inv_term, K_dot))
-	L_2 = - np. dot ( np.dot(trainY.T, np.dot( np.dot(inv_term, K_dot), inv_term)), trainY)
+	L_2 = - np.dot( np.dot(trainY.T, np.dot( np.dot(inv_term, K_dot), inv_term)), trainY)
 	return 0.5*(L_1 + L_2).item(0)
 
-def grad_sigma(sigma,K_N, inv_term):
+def grad_sigma(sigma, term, inv_term):
 	# calculates the gradient wrt to sigma
 	L_1 = np.trace(inv_term)
-	L_2 = np. dot( np.dot( trainY.T, np.power(inv_term, 2)), trainY)
+	inv_term = np.linalg.inv(np.dot(term, term))
+	L_2 = -np.dot( np.dot( trainY.T, inv_term), trainY)
 	return 0.5*(L_1 + L_2).item(0)
 
 def gradients(x):
@@ -92,17 +97,19 @@ def gradients(x):
 	K_N = kernelMatrix(trainX, trainX, c, b)
 	term = sigma*np.eye(N) + K_N
 	inv_term = np.linalg.inv(term)
-	sigma_g = grad_sigma(sigma, K_N, term)
-	c_g = grad_c(c,K_N, inv_term)
+
+	sigma_g = grad_sigma(sigma, term, inv_term)
+	c_g = grad_c(c, K_N, inv_term)
 	b_g = grad_b(trainX, K_N, inv_term)
-	print pack_params(sigma_g, c_g, b_g)
+
+	#print pack_params(sigma_g, c_g, b_g)
 	return pack_params(sigma_g, c_g, b_g)
 
 
 trainX, trainY, testX, testY = get_all_data("kin40k")
 
-trainX = trainX[:100,:]
-trainY = trainY[:100,:] 
+trainX = trainX[:1000,:]
+trainY = trainY[:1000,:] 
 
 # define D
 D = trainX.shape[1]
@@ -111,12 +118,11 @@ N = trainX.shape[0]
 # start guess
 x0 = 0.5*np.ones(D+2)
 # defining limits to the optimizer
-c_limit = (0, None)
+c_limit = (0.0000000000001, None)
 sigma2_limit = (0.0000000000001, None)
 b_limits = (0.0000000000001, None)
 bounds = [c_limit] + [sigma2_limit] + [b_limits]*D
 
 # now trying out the optimizer, using the parameters from sparse-GPSP by Mattias and Timo
-
 results = opt.minimize(fun = loglikelihood, x0 = x0, method = 'L-BFGS-B', jac = gradients, bounds = bounds)
 print results
