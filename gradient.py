@@ -6,6 +6,7 @@ import random
 from utils import *
 from sys import argv
 
+#Class used for automatic test error evaluation, using sets of different n.o. pseudopoints and training set limits
 class testRunner():
 
 	dataset = "kin40k" #"kin40k" or "pumadyn32nm"
@@ -36,15 +37,24 @@ class testRunner():
 				except:
 					notCleared = True
 
+#########
+# This is an implementation of the SPGP, trained by using the manually derived gradients.
+# Usage: 
+# from gradient import *
+# s = spgp()
+# s.train() #Trains the GP hyperparameters (with an ARD kernel) and pseudo inputs on the kin40k or pumadyn32nm dataset 
+# s.evaluateTestError() #evaluates MSE on the test set.
+##########
 #params structure [c, sigma^2, b_1,...,b_D, xbar_1^1,...,xbar_1^D, ..., xbar_M^1,...,xbar_M^D]
 class spgp():
 
+	#Boundary values for all parameters
 	c_limit = (0.0000000000001, None)
 	sigma2_limit = (0.0000000000001, None)
 	b_limits = (0.0000000000001, None)
 	xbar_limits = (None, None)
 
-	#limit is used temporarily to limit n.o training points
+	#limit is used to limit n.o training points
 	def __init__(self, limit = 30, dataset = "kin40k"):
 		trX, trY, tX, tY = get_all_data(dataset)
 		self.trainX = trX[:limit] if limit else trX
@@ -66,7 +76,7 @@ class spgp():
 								bounds = bounds)
 		self.c, self.sigma2, self.b, self.Xbar = unpack_variables(results.x, self.D, self.M)
 
-	#Return average of (prediction_mean_i - test_output_i)^2 for all test examples i
+	#Return MSE (average of (prediction_mean_i - test_output_i)^2 for all test examples i)
 	#Prediction uses the mean of the predictive distribution p(y_star|x_star, y, X, Xbar)
 	def evaluateTestError(self):
 		g = generalGradientVars(self.trainX, self.Xbar, self.trainY, self.sigma2, self.c, self.b, self.M, True)
@@ -108,7 +118,8 @@ def kernelMatrix(X,Y,c,b):
 	K = c*np.exp(-0.5*squared_distances)
 	return K
 
-#(actually only used when sending in identical inputs, so the output is always c)
+#Returns the kernel function on two input points only (x_1 and x_2) 
+#(actually in this code only used when sending in identical inputs, so the output is always c)
 def kernel(x_1, x_2, c, b):
 	return c * math.exp( -0.5 * np.sum(np.multiply(b, np.power(x_1 - x_2, 2))))
 
@@ -177,6 +188,12 @@ def gradient_wrt_Xbar(X, Xbar, y, sigma2, c, b, M, g):
 		gradVec[i] = gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, 2+D+i)
 	return gradVec
 
+def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
+	v = variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, index)
+	pd1 = phiDot_1(g, v)
+	pd2 = phiDot_2(sigma2, g, v)
+	return 0.5 * (pd1 + pd2)
+
 #phi_1 and phi_2 will be calculated here explicitely since it is of different form than for the other gradients
 def gradient_wrt_sigma2(y, sigma2, g):
 	sigma2_inv = math.pow(sigma2, -1)
@@ -195,12 +212,6 @@ def gradient_wrt_sigma2(y, sigma2, g):
 
 	return 0.5 * phi_1 + 0.5 * phi_2
 
-def gradientForVarIndex(X, Xbar, y, sigma2, c, b, M, g, index):
-	v = variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, index)
-	pd1 = phiDot_1(g, v)
-	pd2 = phiDot_2(sigma2, g, v)
-	return 0.5 * (pd1 + pd2)
-
 #Derivatives of phi_1 and phi_2, using general info in g and variable specific info in v
 #assuming that in derivations A^(T/2) means A^(1/2).T
 def phiDot_1(g, v):
@@ -217,7 +228,10 @@ def phiDot_2(sigma2, g, v):
 
 #Calculations of matrices and vectors used by gradients in a dict
 #General: used by all gradients
-#also used in calculation of loglikelihood, but we don't need to include all calculations.
+#limitCalcs: limits calculations done since a subset of the calcs are used in loglikelihood and prediction
+#The matrices marked NxN can be very large but diagonal, so to avoid memory issues the diagonal only is used:
+#when doing matrix multiplication with these the matrixDotDiag and diagDotMatrix methods are used
+#As an imrovement, look into implementing them with sparse matrices
 def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g = {}
 
@@ -225,8 +239,8 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g['K_M_inv'] = np.linalg.inv(g['K_M'])
 	g['K_NM'] = get_K_NM(X, Xbar, c, b)
 
-	g['Gamma_diag'] = get_Gamma_diag(sigma2, X, Xbar, g['K_M_inv'], c, b)
-	g['Gamma_inv_diag'] = 1 / g['Gamma_diag'] 
+	g['Gamma_diag'] = get_Gamma_diag(sigma2, X, Xbar, g['K_M_inv'], c, b) #NxN
+	g['Gamma_inv_diag'] = 1 / g['Gamma_diag'] #NxN
 
 	g['A'] = get_A(sigma2, g) 
 	g['A_inv'] = np.linalg.inv(g['A'])
@@ -236,8 +250,8 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	g['A_half'] = np.linalg.cholesky(g['A'])
 	g['A_half_inv'] = np.linalg.inv(g['A_half'])
 	
-	g['Gamma_half_diag'] = np.power(g['Gamma_diag'], 0.5)
-	g['Gamma_half_inv_diag'] = 1 / g['Gamma_half_diag']
+	g['Gamma_half_diag'] = np.power(g['Gamma_diag'], 0.5) #NxN
+	g['Gamma_half_inv_diag'] = 1 / g['Gamma_half_diag'] #NxN
 
 	g['K_M_half'] = np.linalg.cholesky(g['K_M'])		
 	g['K_M_half_inv'] = np.linalg.inv(g['K_M_half'])
@@ -248,6 +262,9 @@ def generalGradientVars(X, Xbar, y, sigma2, c, b, M, limitCalcs = False):
 	return g
 
 #Variable specific: different when taking gradient wrt different variables
+#The matrices marked NxN can be very large but diagonal, so to avoid memory issues the diagonal only is used:
+#when doing matrix multiplication with these the matrixDotDiag and diagDotMatrix methods are used
+#As an imrovement, look into implementing them with sparse matrices
 def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v = {}
 
@@ -255,8 +272,8 @@ def variableSpecificGradientVars(X, Xbar, y, sigma2, c, b, M, g, varIndex):
 	v['K_NM_bar_dot'] = diagDotMatrix(g['Gamma_half_inv_diag'], v['K_NM_dot'])
 	v['K_M_dot'] = get_K_dot(X, Xbar, c, b, g, varIndex, 'M')
 
-	v['Gamma_dot_diag'] = get_Gamma_dot_diag(X, c, sigma2, b, g, v, varIndex)
-	v['Gamma_bar_dot_diag'] = g['Gamma_half_inv_diag'] * v['Gamma_dot_diag'] * g['Gamma_half_inv_diag']
+	v['Gamma_dot_diag'] = get_Gamma_dot_diag(X, c, sigma2, b, g, v, varIndex) #NxN
+	v['Gamma_bar_dot_diag'] = g['Gamma_half_inv_diag'] * v['Gamma_dot_diag'] * g['Gamma_half_inv_diag'] #NxN
 
 	v['A_dot'] = get_A_dot(sigma2, g, v)
 
@@ -342,22 +359,23 @@ def get_A_dot(sigma2, g, v):
 	A_dot = sigma2 * v['K_M_dot'] + np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])
 	return A_dot + (np.dot(v['K_NM_bar_dot'].T, g['K_NM_bar'])).T - np.dot(matrixDotDiag(g['K_NM_bar'].T, v['Gamma_bar_dot_diag']), g['K_NM_bar'])
 
-#Used for the predictive distribution
+#Used for the predictive distribution (x_star is the new input point)
 def get_k_star(x_star, Xbar, c, b):
 	return kernelMatrix(Xbar, x_star, c, b)
 
-#######################################################################
-#######################################################################
+#Multiply a matrix with a diagonal matrix whose diagonal is given by diagEntries
 #Multiply a matrix by a diag matrix with diagEntries
 def matrixDotDiag(matrix, diagEntries):
 	retMat = np.asarray(matrix) * diagEntries
 	return retMat
 
+#Multiply a diagonal matrix whose diagonal is given by diagEntries with a matrix
 #Multiply a diag matrix with diagEntries with matrix
 def diagDotMatrix(diagEntries, matrix):
 	retMat = np.asarray(matrix) * np.asarray(np.matrix(diagEntries).T)
 	return retMat
 
+#Return diagonal entries of Gamma
 def get_Gamma_diag(sigma2, X, Xbar, K_M_inv, c, b):
 	N = X.shape[0]
 	Lambda = np.zeros(N)
@@ -369,6 +387,7 @@ def get_Gamma_diag(sigma2, X, Xbar, K_M_inv, c, b):
 		Lambda[n] =  K_nn - np.dot(np.dot(k_x_n.T, K_M_inv), k_x_n)[0,0]
 	return 1 + Lambda / sigma2
 
+#Return diagonal entries of Gamma_dot
 #varIndex: the index of the relevant variable in the params vector
 def get_Gamma_dot_diag(X, c, sigma2, b, g, v, varIndex):
 	N = X.shape[0]

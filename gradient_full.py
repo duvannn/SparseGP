@@ -8,10 +8,14 @@ import pdb
 
 #########
 # This is an implementation of the full Gaussian process 
-#########
-
+# Usage: 
+# from gradient_full import *
+# f = fullGP()
+# f.train() #Trains the GP hyperparameters (with an ARD kernel) on the kin40k or pumadyn32nm dataset 
+# f.evaluateTestError() #evaluates MSE on the test set.
+##########
 class fullGP():
-	def __init__(self, N=100):
+	def __init__(self, N=200):
 		self.trainX, self.trainY, self.testX, self.testY = get_all_data("kin40k")
 
 		self.trainX = self.trainX[:N,:]
@@ -42,7 +46,7 @@ class fullGP():
 	def evaluateTestError(self):
 		#Use predictive distribution for full GP
 		K_N = kernelMatrix(self.trainX, self.trainX, self.c, self.b)
-		K_N_inv = np.linalg.inv(K_N)
+		K_N_inv = np.linalg.inv(K_N + self.sigma2 * np.identity(K_N.shape[0]))
 
 		predMatrix = np.dot(K_N_inv, self.trainY)
 
