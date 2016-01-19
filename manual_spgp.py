@@ -40,7 +40,7 @@ class testRunner():
 #########
 # This is an implementation of the SPGP, trained by using the manually derived gradients.
 # Usage: 
-# from gradient import *
+# from manual_spgp import *
 # s = spgp()
 # s.train() #Trains the GP hyperparameters (with an ARD kernel) and pseudo inputs on the kin40k or pumadyn32nm dataset 
 # s.evaluateTestError() #evaluates MSE on the test set.

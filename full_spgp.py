@@ -9,7 +9,7 @@ import pdb
 #########
 # This is an implementation of the full Gaussian process 
 # Usage: 
-# from gradient_full import *
+# from full_spgp import *
 # f = fullGP()
 # f.train() #Trains the GP hyperparameters (with an ARD kernel) on the kin40k or pumadyn32nm dataset 
 # f.evaluateTestError() #evaluates MSE on the test set.
