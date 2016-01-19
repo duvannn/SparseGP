@@ -11,7 +11,7 @@ class testRunner():
 
 	dataset = "kin40k" #"kin40k" or "pumadyn32nm"
 	pseudopoints = [5, 20]
-	trainingsetLimits = [1000, 1000]
+	trainingsetLimits = [500, 1000]
 
 	def run(self):
 		for i, ppoints in enumerate(self.pseudopoints):
